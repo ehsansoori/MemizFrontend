@@ -1,0 +1,149 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+
+  --color-surface-50: oklch(0.99 0.004 264);
+  --color-surface-100: oklch(0.97 0.008 264);
+  --color-surface-200: oklch(0.92 0.02 264);
+  --color-surface-300: oklch(0.85 0.03 264);
+  --color-surface-800: oklch(0.28 0.04 264);
+  --color-surface-900: oklch(0.2 0.035 264);
+  --color-surface-950: oklch(0.14 0.03 264);
+
+  --color-accent: oklch(0.62 0.19 264);
+  --color-accent-hover: oklch(0.55 0.2 264);
+  --color-accent-muted: oklch(0.62 0.19 264 / 0.15);
+
+  --shadow-card:
+    0 1px 2px oklch(0 0 0 / 0.04), 0 8px 24px oklch(0.2 0.04 264 / 0.08);
+  --shadow-card-dark:
+    0 1px 2px oklch(0 0 0 / 0.2), 0 12px 32px oklch(0 0 0 / 0.35);
+}
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply m-0 min-h-dvh bg-white font-sans text-slate-800 dark:bg-surface-950 dark:text-slate-100;
+  }
+
+  #root {
+    @apply min-h-dvh;
+  }
+}
+
+@layer utilities {
+  /** Thin scrollbar; low-contrast until hover (Raycast / macOS-ish). */
+  .scrollbar-minimal {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--color-surface-300) 45%, transparent) transparent;
+  }
+  .scrollbar-minimal:hover {
+    scrollbar-color: color-mix(in oklab, var(--color-surface-300) 65%, transparent)
+      color-mix(in oklab, var(--color-surface-200) 35%, transparent);
+  }
+  .dark .scrollbar-minimal {
+    scrollbar-color: color-mix(in oklab, oklch(0.4 0.02 264) 40%, transparent) transparent;
+  }
+  .dark .scrollbar-minimal:hover {
+    scrollbar-color: color-mix(in oklab, oklch(0.48 0.02 264) 55%, transparent)
+      color-mix(in oklab, oklch(0.22 0.03 264) 50%, transparent);
+  }
+  .scrollbar-minimal::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  .scrollbar-minimal::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-minimal::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--color-surface-300) 35%, transparent);
+  }
+  .scrollbar-minimal:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--color-surface-300) 55%, transparent);
+  }
+  .dark .scrollbar-minimal::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, oklch(0.38 0.02 264) 45%, transparent);
+  }
+  .dark .scrollbar-minimal:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, oklch(0.5 0.02 264) 55%, transparent);
+  }
+
+  /** Deck commit modal — extra-thin, dark-friendly scrollbar. */
+  .scrollbar-deck-commit {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, oklch(0.42 0.02 264) 35%, transparent) transparent;
+  }
+  .scrollbar-deck-commit::-webkit-scrollbar {
+    width: 3px;
+  }
+  .scrollbar-deck-commit::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-deck-commit::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in oklab, oklch(0.55 0.02 264) 28%, transparent);
+  }
+  .scrollbar-deck-commit:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, oklch(0.58 0.02 264) 45%, transparent);
+  }
+  .dark .scrollbar-deck-commit {
+    scrollbar-color: color-mix(in oklab, oklch(0.45 0.02 264) 40%, transparent) transparent;
+  }
+  .dark .scrollbar-deck-commit::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, oklch(0.42 0.025 264) 50%, transparent);
+  }
+  .dark .scrollbar-deck-commit:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, oklch(0.52 0.025 264) 65%, transparent);
+  }
+}
+
+@keyframes deck-commit-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes deck-commit-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.deck-commit-backdrop-animate {
+  animation: deck-commit-backdrop-in 0.2s ease-out forwards;
+}
+
+.deck-commit-panel-animate {
+  animation: deck-commit-panel-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.toast-enter {
+  animation: toast-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
