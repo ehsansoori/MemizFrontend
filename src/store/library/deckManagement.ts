@@ -1,7 +1,10 @@
 import { ensureInboxDeck, findInboxDeck, isReservedInboxName } from '@/domain/inboxDeck'
+import { createDefaultDeckSettings, defaultTemplateIdForDeckType } from '@/domain/deckSettings'
+import { BASIC_TEMPLATE_ID } from '@/domain/cardTemplates'
 import { storage } from '@/storage/adapter'
 import { bootstrapLibraryDecks } from '@/storage/seed'
 import type { Deck } from '@/types/cards'
+import type { CreateDeckParams, DeckSettings } from '@/types/deckProfile'
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -31,6 +34,18 @@ export async function renameDeckInStorage(deckId: string, newName: string): Prom
     name: trimmed,
     updatedAt: t,
   }
+  await storage.decks.put(updated)
+  return updated
+}
+
+export async function updateDeckSettingsInStorage(
+  deckId: string,
+  settings: DeckSettings,
+): Promise<Deck> {
+  const existing = await storage.decks.getById(deckId)
+  if (!existing) throw new Error('Deck not found.')
+  const t = nowIso()
+  const updated: Deck = { ...existing, settings, updatedAt: t }
   await storage.decks.put(updated)
   return updated
 }
@@ -77,8 +92,8 @@ export async function reloadLibraryFromStorage(): Promise<{
   return { decks, cards }
 }
 
-export async function createDeckInStorage(name: string): Promise<Deck> {
-  const trimmed = name.trim()
+export async function createDeckInStorage(params: CreateDeckParams): Promise<Deck> {
+  const trimmed = params.name.trim()
   if (!trimmed) throw new Error('Deck name is required.')
   if (isReservedInboxName(trimmed)) {
     const all = await storage.decks.getAll()
@@ -100,9 +115,23 @@ export async function createDeckInStorage(name: string): Promise<Deck> {
     createdAt: t,
     updatedAt: t,
     lastUsedAt: t,
+    deckTypeId: params.deckTypeId,
+    defaultTemplateId: params.defaultTemplateId || defaultTemplateIdForDeckType(),
+    templateId: params.defaultTemplateId || defaultTemplateIdForDeckType(),
+    settings: params.settings ?? createDefaultDeckSettings(params.deckTypeId),
   }
   await storage.decks.put(deck)
   return deck
+}
+
+/** @deprecated Use createDeckInStorage with CreateDeckParams */
+export async function createDeckInStorageLegacy(name: string): Promise<Deck> {
+  return createDeckInStorage({
+    name,
+    deckTypeId: 'custom',
+    defaultTemplateId: BASIC_TEMPLATE_ID,
+    settings: createDefaultDeckSettings('custom'),
+  })
 }
 
 export async function getInboxDeckForDelete(): Promise<Deck> {

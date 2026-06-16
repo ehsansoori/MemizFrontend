@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CardNavigation } from '@/components/controls/CardNavigation'
-import { ReviewCardFilter } from '@/components/review/ReviewCardFilter'
-import { ReviewDeckSelector } from '@/components/review/ReviewDeckSelector'
-import {
-  filterAndRankCardsBySearch,
-  type ReviewSearchField,
-} from '@/domain/cardSearch'
+import { ReviewFlashcard } from '@/components/review/ReviewFlashcard'
+import { ReviewRatingButtons, type ReviewRating } from '@/components/review/ReviewRatingButtons'
+import { ReviewStudyHeader } from '@/components/review/ReviewStudyHeader'
 import {
   countByQueue,
   filterCardsByQueue,
   type ReviewQueueFilter,
 } from '@/domain/reviewQueue'
 import { useLibraryStore } from '@/store/library/libraryStore'
-import { cardFaceDisplayText } from '@/utils/renderCardFace'
 import type { SavedCard } from '@/types/cards'
 
 function isTypingTarget(t: EventTarget | null): boolean {
@@ -29,21 +24,21 @@ function isTypingTarget(t: EventTarget | null): boolean {
   return false
 }
 
-const queueTabs: { id: ReviewQueueFilter; label: string }[] = [
-  { id: 'new', label: 'New' },
-  { id: 'review', label: 'Review' },
-]
-
 export function ReviewPage() {
   const activeDeckId = useLibraryStore((s) => s.activeDeckId)
   const allCards = useLibraryStore((s) => s.cards)
+  const decks = useLibraryStore((s) => s.decks)
 
-  const [query, setQuery] = useState('')
-  const [searchField, setSearchField] = useState<ReviewSearchField>('all')
   const [queue, setQueue] = useState<ReviewQueueFilter>('new')
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [showBack, setShowBack] = useState(false)
+  const [showAnswer, setShowAnswer] = useState(false)
+  const [sessionComplete, setSessionComplete] = useState(false)
   const lastViewedCardIdRef = useRef<string | null>(null)
+
+  const activeDeckName = useMemo(
+    () => decks.find((d) => d.id === activeDeckId)?.name ?? 'Deck',
+    [decks, activeDeckId],
+  )
 
   const deckCards = useMemo(
     () => (activeDeckId ? allCards.filter((c) => c.deckId === activeDeckId) : []),
@@ -57,149 +52,192 @@ export function ReviewPage() {
     [deckCards, queue],
   )
 
-  const filteredCards = useMemo(
-    () => filterAndRankCardsBySearch(queueCards, query, searchField),
-    [queueCards, query, searchField],
-  )
-
-  const total = filteredCards.length
-  const currentCard: SavedCard | null = filteredCards[currentIndex] ?? null
-  const isFiltering = query.trim().length > 0
-
-  const faceText = useMemo(() => {
-    if (!currentCard) return ''
-    const raw = showBack ? currentCard.back : currentCard.front
-    return cardFaceDisplayText(raw)
-  }, [currentCard, showBack])
+  const total = queueCards.length
+  const currentCard: SavedCard | null = queueCards[currentIndex] ?? null
 
   useEffect(() => {
-    lastViewedCardIdRef.current = filteredCards[currentIndex]?.id ?? null
-  }, [filteredCards, currentIndex])
+    lastViewedCardIdRef.current = queueCards[currentIndex]?.id ?? null
+  }, [queueCards, currentIndex])
 
   useEffect(() => {
     setCurrentIndex(0)
-    setShowBack(false)
-  }, [activeDeckId, queue, searchField])
+    setShowAnswer(false)
+    setSessionComplete(false)
+  }, [activeDeckId, queue])
 
   useEffect(() => {
-    if (filteredCards.length === 0) {
+    if (queueCards.length === 0) {
       setCurrentIndex(0)
       return
     }
     const lastId = lastViewedCardIdRef.current
     if (lastId) {
-      const idx = filteredCards.findIndex((c) => c.id === lastId)
+      const idx = queueCards.findIndex((c) => c.id === lastId)
       if (idx >= 0) {
         setCurrentIndex(idx)
         return
       }
     }
     setCurrentIndex(0)
-  }, [filteredCards])
+  }, [queueCards])
 
-  const goPrev = useCallback(() => {
-    setCurrentIndex((i) => Math.max(0, i - 1))
-  }, [])
+  const advance = useCallback(() => {
+    setShowAnswer(false)
+    if (currentIndex < total - 1) {
+      setCurrentIndex((i) => i + 1)
+    } else {
+      setSessionComplete(true)
+    }
+  }, [currentIndex, total])
 
-  const goNext = useCallback(() => {
-    setCurrentIndex((i) => Math.min(total - 1, i + 1))
-  }, [total])
+  const handleRate = useCallback(
+    (_rating: ReviewRating) => {
+      advance()
+    },
+    [advance],
+  )
+
+  const restartSession = () => {
+    setCurrentIndex(0)
+    setShowAnswer(false)
+    setSessionComplete(false)
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target)) return
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault()
-        goPrev()
-      }
-      if (e.key === 'ArrowRight') {
-        e.preventDefault()
-        goNext()
-      }
+      if (isTypingTarget(e.target) || sessionComplete || total === 0) return
+
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault()
-        setShowBack((v) => !v)
+        if (!showAnswer) {
+          setShowAnswer(true)
+        }
+      }
+
+      if (showAnswer) {
+        if (e.key === '1') {
+          e.preventDefault()
+          handleRate('again')
+        }
+        if (e.key === '2') {
+          e.preventDefault()
+          handleRate('hard')
+        }
+        if (e.key === '3') {
+          e.preventDefault()
+          handleRate('good')
+        }
+        if (e.key === '4') {
+          e.preventDefault()
+          handleRate('easy')
+        }
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [goPrev, goNext])
+  }, [showAnswer, sessionComplete, total, handleRate])
 
-  return (
-    <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-4 sm:px-8">
-      <ReviewDeckSelector />
-
-      <ReviewCardFilter
-        query={query}
-        field={searchField}
-        matchCount={total}
-        totalInQueue={queueCards.length}
-        onQueryChange={setQuery}
-        onFieldChange={setSearchField}
-      />
-
-      <div className="mb-4 flex gap-4" role="tablist" aria-label="Card queue">
-        {queueTabs.map((tab) => {
-          const active = queue === tab.id
-          const count = queueCounts[tab.id]
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setQueue(tab.id)}
-              className={[
-                'text-[13px] text-accent hover:underline',
-                active ? 'font-semibold underline' : 'font-normal',
-              ].join(' ')}
-            >
-              {tab.label} ({count})
-            </button>
-          )
-        })}
-      </div>
-
-      {total === 0 ? (
-        <p className="px-3 py-10 text-center text-[13px] text-slate-500">
-          {deckCards.length === 0 ? (
-            <>
-              No cards in this deck.{' '}
-              <Link to="/add-cards" className="text-accent hover:underline">
-                Add Cards
-              </Link>
-            </>
-          ) : isFiltering ? (
-            <>No cards match your search in this field.</>
-          ) : (
-            `No ${queue} cards.`
-          )}
+  if (sessionComplete) {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-slate-50 px-6 text-center dark:bg-surface-950">
+        <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400">
+          <svg
+            className="h-10 w-10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+        </div>
+        <h1 className="text-[22px] font-bold text-slate-900 dark:text-white">
+          Session complete
+        </h1>
+        <p className="mt-2 text-[14px] text-slate-500 dark:text-slate-400">
+          You reviewed all {total} {queue} cards in {activeDeckName}.
         </p>
-      ) : (
-        <div className="flex flex-col items-center gap-3 px-3">
+        <div className="mt-8 flex w-full max-w-xs flex-col gap-3">
           <button
             type="button"
-            onClick={() => setShowBack((v) => !v)}
-            className="w-full max-w-xl border border-slate-200 bg-white px-6 py-10 text-left dark:border-slate-700 dark:bg-slate-900/40"
+            onClick={restartSession}
+            className="h-12 rounded-2xl bg-accent text-[15px] font-semibold text-white transition active:scale-[0.98]"
           >
-            <p className="mb-3 text-[11px] text-slate-400">
-              {showBack ? 'Back' : 'Front'}
-            </p>
-            <p className="whitespace-pre-wrap text-lg font-semibold leading-relaxed text-slate-900 dark:text-slate-50">
-              {faceText}
-            </p>
+            Study again
           </button>
-
-          <CardNavigation
-            currentIndex={currentIndex}
-            total={total}
-            onPrev={goPrev}
-            onNext={goNext}
-            disabled={total <= 1}
-          />
-          <p className="text-[11px] text-slate-400">← → · Space to flip</p>
+          <Link
+            to="/decks"
+            className="flex h-12 items-center justify-center rounded-2xl bg-slate-200 text-[15px] font-semibold text-slate-700 transition active:scale-[0.98] dark:bg-slate-800 dark:text-slate-200"
+          >
+            Back to decks
+          </Link>
         </div>
-      )}
-    </main>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex min-h-dvh flex-col bg-slate-50 dark:bg-surface-950">
+      <ReviewStudyHeader
+        current={total > 0 ? currentIndex + 1 : 0}
+        total={total}
+        queue={queue}
+        queueCounts={queueCounts}
+        onQueueChange={setQueue}
+      />
+
+      {total === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+          <p className="text-[16px] font-semibold text-slate-700 dark:text-slate-200">
+            {deckCards.length === 0 ? 'No cards in this deck' : `No ${queue} cards`}
+          </p>
+          <p className="mt-2 text-[14px] text-slate-500 dark:text-slate-400">
+            {deckCards.length === 0
+              ? 'Add cards to start studying.'
+              : 'Switch queue or add more cards.'}
+          </p>
+          <Link
+            to={activeDeckId ? `/decks/${activeDeckId}` : '/decks'}
+            className="mt-6 flex h-12 items-center justify-center rounded-2xl bg-accent px-8 text-[15px] font-semibold text-white transition active:scale-[0.98]"
+          >
+            {deckCards.length === 0 ? 'Go to deck' : 'Back to deck'}
+          </Link>
+        </div>
+      ) : currentCard ? (
+        <>
+          <div className="flex flex-1 flex-col items-center justify-center px-4 py-6">
+            <ReviewFlashcard key={currentCard.id} card={currentCard} showAnswer={showAnswer} />
+
+            {!showAnswer ? (
+              <button
+                type="button"
+                onClick={() => setShowAnswer(true)}
+                className="review-show-answer-animate mt-6 flex h-14 w-full max-w-lg items-center justify-center rounded-2xl bg-accent text-[16px] font-bold text-white shadow-lg shadow-accent/25 transition active:scale-[0.98]"
+              >
+                Show Answer
+              </button>
+            ) : null}
+          </div>
+
+          {showAnswer ? (
+            <footer className="shrink-0 border-t border-slate-200/80 bg-white/95 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm dark:border-slate-800 dark:bg-surface-950/95">
+              <ReviewRatingButtons onRate={handleRate} />
+              <p className="mt-2 text-center text-[11px] text-slate-400 dark:text-slate-500">
+                1 Again · 2 Hard · 3 Good · 4 Easy
+              </p>
+            </footer>
+          ) : (
+            <footer className="shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
+              <p className="text-center text-[12px] text-slate-400 dark:text-slate-500">
+                Tap Show Answer or press Space
+              </p>
+            </footer>
+          )}
+        </>
+      ) : null}
+    </div>
   )
 }

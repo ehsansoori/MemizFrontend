@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { AppNav } from '@/components/layout/AppNav'
+import { GlobalSearchButton } from '@/components/layout/GlobalSearchButton'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
 import { useAuthStore } from '@/store/auth/authStore'
 
@@ -36,7 +37,8 @@ export function AppHeader({ trailing }: AppHeaderProps) {
 
         <AppNav />
 
-        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-4">
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-3 sm:gap-4">
+          <GlobalSearchButton />
           {trailing}
           <span
             className="max-w-[10rem] truncate text-[13px] text-slate-600 dark:text-slate-400"

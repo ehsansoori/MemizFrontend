@@ -71,6 +71,7 @@ export function mapApiCardsToGeneratedCards(
   rows: ApiCardResponseDto[],
   form: GenerateCardsFormDto,
   layout: { frontLayout: CardFieldLayout[]; backLayout: CardFieldLayout[] },
+  templateId: string,
   preserve?: { id: string; sourceInput: string }[],
 ): GeneratedCard[] {
   const meta = metadataFromForm(form)
@@ -83,6 +84,7 @@ export function mapApiCardsToGeneratedCards(
       return {
         id: preserve?.[index]?.id ?? newId(),
         sourceInput: originalWord,
+        templateId,
         frontLayout: cloneLayoutForCard(layout.frontLayout),
         backLayout: cloneLayoutForCard(layout.backLayout),
         data: {
@@ -104,6 +106,7 @@ export function mapApiCardsToGeneratedCards(
     return {
       id: preserve?.[index]?.id ?? newId(),
       sourceInput,
+      templateId,
       frontLayout: cloneLayoutForCard(layout.frontLayout),
       backLayout: cloneLayoutForCard(layout.backLayout),
       data: apiCardToGeneratedCardData(row, form),

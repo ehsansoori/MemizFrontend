@@ -12,6 +12,7 @@ import { cardQueryKeys } from '@/hooks/cards/queryKeys'
 export type GenerateCardsMutationInput = {
   form: GenerateCardsFormDto
   layout: { frontLayout: CardFieldLayout[]; backLayout: CardFieldLayout[] }
+  templateId: string
   preserve?: { id: string; sourceInput: string }[]
 }
 
@@ -27,6 +28,7 @@ export function useGenerateCardsMutation() {
     mutationFn: async ({
       form,
       layout,
+      templateId,
       preserve,
     }: GenerateCardsMutationInput): Promise<GenerateCardsMutationResult> => {
       abortRef.current?.abort()
@@ -43,7 +45,7 @@ export function useGenerateCardsMutation() {
         signal: controller.signal,
       })
 
-      const cards = mapApiCardsToGeneratedCards(rows, form, layout, preserve)
+      const cards = mapApiCardsToGeneratedCards(rows, form, layout, templateId, preserve)
       return { cards }
     },
     onSettled: () => {

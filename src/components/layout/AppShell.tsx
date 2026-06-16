@@ -6,6 +6,7 @@ import { WorkspaceHeaderStrip } from '@/components/controls/WorkspaceHeaderStrip
 export function AppShell() {
   const { pathname } = useLocation()
   const onAddCards = pathname === '/add-cards'
+  const onReview = pathname === '/review'
   const showDeckPicker = onAddCards
 
   const trailing = (
@@ -17,7 +18,7 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-white dark:bg-slate-950">
-      <AppHeader trailing={trailing} />
+      {!onReview ? <AppHeader trailing={trailing} /> : null}
       <Outlet />
     </div>
   )

@@ -1,527 +1,327 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { CardNavigation } from '@/components/controls/CardNavigation'
-import { InlineSessionCard } from '@/components/flashcard/InlineSessionCard'
-import { UnknownWordCard } from '@/components/flashcard/UnknownWordCard'
-import { Button } from '@/components/ui/Button'
-import { CardAreaSkeleton } from '@/components/ui/CardAreaSkeleton'
-import { SelectField } from '@/components/ui/SelectField'
-import { TextAreaField } from '@/components/ui/TextAreaField'
-import { ToggleField } from '@/components/ui/ToggleField'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AddCardSettingsSheet } from '@/components/addCards/AddCardSettingsSheet'
+import { EditableTemplateCard } from '@/components/addCards/EditableTemplateCard'
+import { TemplateBuilderSheet } from '@/components/addCards/TemplateBuilderSheet'
 import {
-  DEFAULT_GENERATOR_INPUT,
-  DEFAULT_SOURCE_LANGUAGE,
-  DEFAULT_TARGET_LANGUAGE,
-  DIFFICULTY_OPTIONS,
-  EXAMPLE_COUNT_OPTIONS,
-  LANGUAGE_OPTIONS,
-  TONE_OPTIONS,
-} from '@/constants/formOptions'
+  draftToCardData,
+  draftToFrontBack,
+  emptyCardDraft,
+  generatedCardToDraft,
+  type CardDraft,
+} from '@/domain/cardDraft'
+import {
+  createDefaultLanguageSettings,
+  languageSettingsToGenerationOptions,
+  resolveLanguageSettings,
+} from '@/domain/deckSettings'
+import { deckTypeSupportsLanguageSettings } from '@/domain/deckTypes'
+import {
+  resolveCardTemplate,
+  resolveDeckDefaultTemplateId,
+} from '@/domain/resolveDeckTemplate'
+import { createDefaultStudyProgress } from '@/domain/studyDefaults'
 import {
   isGenerateMutationAbort,
   useGenerateCardsMutation,
 } from '@/hooks/cards/useGenerateCardsMutation'
 import { useToast } from '@/providers/toastContext'
-import { withInvalidCardWord } from '@/domain/invalidCard'
 import { getApiErrorMessage } from '@/services/api/getApiErrorMessage'
-import { parseInputTerms } from '@/services/cards/buildApiRequest'
-import {
-  useGeneratedSessionStore,
-  useLayoutDispatch,
-} from '@/store/generatedSession/reviewHooks'
-import type {
-  CardGenerationOptionsDto,
-  GenerateCardsFormDto,
-} from '@/types/cards'
-import { PREVIEW_SAMPLE_DATA } from '@/utils/cardLayoutModel'
-
-const defaultOptions: CardGenerationOptionsDto = {
-  includePhonetic: true,
-  includePartOfSpeech: true,
-  includeTargetMeaning: true,
-  includeEnglishMeaning: true,
-  includeExampleTranslations: true,
-  tone: 'friendly',
-  difficulty: 'intermediate',
-  exampleCount: 2,
-}
-
-function isTypingTarget(t: EventTarget | null): boolean {
-  if (!(t instanceof HTMLElement)) return false
-  if (
-    t instanceof HTMLInputElement ||
-    t instanceof HTMLTextAreaElement ||
-    t instanceof HTMLSelectElement
-  ) {
-    return true
-  }
-  if (t.isContentEditable) return true
-  const role = t.getAttribute('role')
-  if (role === 'combobox' || role === 'textbox' || role === 'searchbox') return true
-  if (t.closest('[contenteditable="true"]')) return true
-  return false
-}
+import { customTemplateRepository } from '@/storage/customTemplateRepository'
+import { storage } from '@/storage/adapter'
+import { useLayoutDispatch } from '@/store/generatedSession/reviewHooks'
+import { useLibraryStore } from '@/store/library/libraryStore'
+import type { GenerateCardsFormDto, SavedCard } from '@/types/cards'
+import type { LanguageDeckSettings } from '@/types/deckProfile'
 
 export function GeneratePageInner() {
-  const { state, dispatch, currentCard } = useGeneratedSessionStore()
-  const { setLayouts, frontLayout, backLayout } = useLayoutDispatch()
+  const { setLayouts } = useLayoutDispatch()
   const { showToast } = useToast()
   const generateMutation = useGenerateCardsMutation()
 
-  const [input, setInput] = useState(DEFAULT_GENERATOR_INPUT)
-  const [sourceLanguage, setSourceLanguage] = useState(DEFAULT_SOURCE_LANGUAGE)
-  const [targetLanguage, setTargetLanguage] = useState(DEFAULT_TARGET_LANGUAGE)
-  const [options, setOptions] = useState<CardGenerationOptionsDto>(defaultOptions)
+  const activeDeckId = useLibraryStore((s) => s.activeDeckId)
+  const decks = useLibraryStore((s) => s.decks)
+  const reload = useLibraryStore((s) => s.reload)
+  const updateDeckSettings = useLibraryStore((s) => s.updateDeckSettings)
+
+  const activeDeck = useMemo(
+    () => decks.find((d) => d.id === activeDeckId),
+    [decks, activeDeckId],
+  )
+  const activeDeckName = activeDeck?.name ?? 'active deck'
+  const deckDefaultTemplateId = useMemo(
+    () => resolveDeckDefaultTemplateId(activeDeck),
+    [activeDeck],
+  )
+  const [selectedTemplateId, setSelectedTemplateId] = useState(deckDefaultTemplateId)
+  const [templatesRefreshKey, setTemplatesRefreshKey] = useState(0)
+  const cardTemplate = useMemo(
+    () => resolveCardTemplate(selectedTemplateId),
+    [selectedTemplateId, templatesRefreshKey],
+  )
+  const showAiSettings = deckTypeSupportsLanguageSettings(activeDeck?.deckTypeId)
+  const aiAvailable = showAiSettings
+
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [templateBuilderOpen, setTemplateBuilderOpen] = useState(false)
+  const [templateBuilderMode, setTemplateBuilderMode] = useState<'create' | 'edit'>('create')
+  const [languageSettings, setLanguageSettings] = useState<LanguageDeckSettings>(
+    createDefaultLanguageSettings(),
+  )
+
+  const [draft, setDraft] = useState<CardDraft>(() => emptyCardDraft(cardTemplate))
   const [formError, setFormError] = useState<string | null>(null)
-  const [draftSavedBanner, setDraftSavedBanner] = useState(false)
-  const [invalidInlineEdit, setInvalidInlineEdit] = useState<{
-    cardId: string
-    draft: string
-  } | null>(null)
-  const [regeneratingCardId, setRegeneratingCardId] = useState<string | null>(null)
-  const prevDraftCountRef = useRef(0)
+  const [saveBusy, setSaveBusy] = useState(false)
 
   const isGenerating = generateMutation.isPending
-  const isSingleCardRegen = regeneratingCardId !== null
-  const isSessionGenerating = isGenerating && !isSingleCardRegen
-  const total = state.session?.cards.length ?? 0
-  const displayData = currentCard?.data ?? PREVIEW_SAMPLE_DATA
-  const inDraftSession = !!state.session && total > 0
+  const busy = isGenerating || saveBusy
 
   useEffect(() => {
-    const count = state.session?.cards.length ?? 0
-    if (prevDraftCountRef.current > 0 && count === 0 && !state.session) {
-      setDraftSavedBanner(true)
-    }
-    prevDraftCountRef.current = count
-  }, [state.session])
+    const lang = resolveLanguageSettings(activeDeck)
+    if (lang) setLanguageSettings(lang)
+  }, [activeDeck])
 
   useEffect(() => {
-    setInvalidInlineEdit(null)
-  }, [currentCard?.id])
+    setSelectedTemplateId(deckDefaultTemplateId)
+    setDraft(emptyCardDraft(resolveCardTemplate(deckDefaultTemplateId)))
+    setFormError(null)
+  }, [deckDefaultTemplateId])
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target)) return
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault()
-        dispatch({ type: 'NAV_PREV' })
-      }
-      if (e.key === 'ArrowRight') {
-        e.preventDefault()
-        dispatch({ type: 'NAV_NEXT' })
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [dispatch])
+    setLayouts(cardTemplate.frontLayout, cardTemplate.backLayout)
+  }, [cardTemplate, setLayouts])
 
-  const updateOption = useCallback(
-    <K extends keyof CardGenerationOptionsDto>(
-      key: K,
-      value: CardGenerationOptionsDto[K],
-    ) => {
-      setOptions((o) => ({ ...o, [key]: value }))
-    },
-    [],
-  )
+  const applyTemplate = useCallback((templateId: string) => {
+    setSelectedTemplateId(templateId)
+    setDraft(emptyCardDraft(resolveCardTemplate(templateId)))
+    setFormError(null)
+  }, [])
 
-  const buildForm = useCallback((): GenerateCardsFormDto => {
+  const wordInput = draft.data.word.trim()
+
+  const buildGenerateForm = useCallback((): GenerateCardsFormDto => {
     return {
-      input: input.trim(),
-      sourceLanguage,
-      targetLanguage,
-      options,
+      input: wordInput,
+      sourceLanguage: languageSettings.sourceLanguage,
+      targetLanguage: languageSettings.targetLanguage,
+      options: languageSettingsToGenerationOptions(languageSettings, cardTemplate),
     }
-  }, [input, sourceLanguage, targetLanguage, options])
+  }, [wordInput, languageSettings, cardTemplate])
 
-  const submitGenerate = useCallback(
-    (
-      form: GenerateCardsFormDto,
-      opts?: {
-        replaceCardId?: string
-        preserveSourceInput?: string
+  const generateFromWord = useCallback(() => {
+    if (!wordInput) {
+      showToast('Enter a word or phrase first.', 'error')
+      return
+    }
+    if (!aiAvailable) {
+      showToast('AI generation is available for Language Learning decks.', 'error')
+      return
+    }
+
+    setFormError(null)
+    generateMutation.mutate(
+      {
+        form: buildGenerateForm(),
+        layout: {
+          frontLayout: cardTemplate.frontLayout,
+          backLayout: cardTemplate.backLayout,
+        },
+        templateId: selectedTemplateId,
       },
-    ) => {
-      if (parseInputTerms(form.input).length === 0) {
-        setFormError('Enter at least one word or phrase.')
-        return
+      {
+        onSuccess: ({ cards }) => {
+          const card = cards[0]
+          if (!card) return
+          if (card.invalid) {
+            setFormError(
+              `Could not generate "${card.invalid.originalWord}". Check spelling or try another word.`,
+            )
+            return
+          }
+          setDraft(generatedCardToDraft(card.data, cardTemplate))
+          showToast('Card filled — review and edit as needed.', 'success')
+        },
+        onError: (err) => {
+          if (isGenerateMutationAbort(err)) return
+          const message = getApiErrorMessage(err)
+          setFormError(message)
+          showToast(message, 'error')
+        },
+      },
+    )
+  }, [
+    wordInput,
+    aiAvailable,
+    generateMutation,
+    buildGenerateForm,
+    cardTemplate,
+    selectedTemplateId,
+    showToast,
+  ])
+
+  const saveCard = async () => {
+    const { front, back } = draftToFrontBack(cardTemplate, draft)
+    if (!front || !back) {
+      showToast('Fill in required fields.', 'error')
+      return
+    }
+    if (!activeDeckId) {
+      showToast('Select a deck first.', 'error')
+      return
+    }
+    setSaveBusy(true)
+    try {
+      const data = draftToCardData(cardTemplate, draft)
+      const t = new Date().toISOString()
+      const card: SavedCard = {
+        id: crypto.randomUUID(),
+        originalGeneratedCardId: crypto.randomUUID(),
+        deckId: activeDeckId,
+        templateId: selectedTemplateId,
+        front,
+        back,
+        data,
+        savedAt: t,
+        updatedAt: t,
+        study: createDefaultStudyProgress(),
       }
-
+      await storage.cards.put(card)
+      await reload()
+      showToast(`Card saved to ${activeDeckName}.`, 'success')
+      setDraft(emptyCardDraft(cardTemplate))
       setFormError(null)
-      generateMutation.mutate(
-        {
-          form,
-          layout: { frontLayout: state.frontLayout, backLayout: state.backLayout },
-          preserve:
-            opts?.replaceCardId && opts.preserveSourceInput
-              ? [{ id: opts.replaceCardId, sourceInput: opts.preserveSourceInput }]
-              : undefined,
-        },
-        {
-          onSuccess: ({ cards }) => {
-            setDraftSavedBanner(false)
-            if (opts?.replaceCardId) {
-              const next = cards[0]
-              if (next) {
-                dispatch({
-                  type: 'REPLACE_CARD',
-                  card: { ...next, isRegenerating: false },
-                })
-              }
-              setInvalidInlineEdit(null)
-              setRegeneratingCardId(null)
-              return
-            }
-            if (cards.length > 0) {
-              dispatch({
-                type: 'SET_SESSION_FROM_CARDS',
-                cards,
-                sourceType: 'api',
-              })
-              showToast(
-                cards.length === 1
-                  ? 'Draft session ready — 1 card generated.'
-                  : `Draft session ready — ${cards.length} cards generated.`,
-                'success',
-              )
-            } else {
-              dispatch({ type: 'CLEAR_SESSION' })
-            }
-          },
-          onError: (err) => {
-            if (opts?.replaceCardId) {
-              dispatch({
-                type: 'SET_CARD_REGENERATING',
-                cardId: opts.replaceCardId,
-                value: false,
-              })
-              setRegeneratingCardId(null)
-            }
-            if (isGenerateMutationAbort(err)) return
-            const message = getApiErrorMessage(err)
-            setFormError(message)
-            showToast(message, 'error')
-          },
-        },
-      )
-    },
-    [dispatch, generateMutation, showToast, state.backLayout, state.frontLayout],
-  )
-
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    submitGenerate(buildForm())
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not save card.', 'error')
+    } finally {
+      setSaveBusy(false)
+    }
   }
 
-  const regenerateCurrentCardOnly = useCallback(
-    (word: string) => {
-      if (!currentCard?.invalid) return
-      const nextInput = word.trim()
-      if (!nextInput) return
-
-      setInvalidInlineEdit(null)
-      dispatch({
-        type: 'REPLACE_CARD',
-        card: withInvalidCardWord(currentCard, nextInput, { regenerating: true }),
+  const saveSettings = () => {
+    if (showAiSettings && activeDeckId) {
+      void updateDeckSettings(activeDeckId, { language: languageSettings }).then(() => {
+        showToast('Settings saved.', 'success')
+        setSettingsOpen(false)
       })
-      setRegeneratingCardId(currentCard.id)
+      return
+    }
+    setSettingsOpen(false)
+  }
 
-      submitGenerate(
-        {
-          input: nextInput,
-          sourceLanguage,
-          targetLanguage,
-          options,
-        },
-        {
-          replaceCardId: currentCard.id,
-          preserveSourceInput: nextInput,
-        },
-      )
-    },
-    [currentCard, dispatch, options, sourceLanguage, submitGenerate, targetLanguage],
-  )
+  const openCreateTemplate = () => {
+    setSettingsOpen(false)
+    setTemplateBuilderMode('create')
+    setTemplateBuilderOpen(true)
+  }
 
-  const useWordAnyway = useCallback(() => {
-    if (!currentCard?.invalid) return
-    const sourceWord = currentCard.invalid.originalWord.trim()
-    if (!sourceWord) return
-    dispatch({
-      type: 'REPLACE_CARD',
-      card: {
-        ...currentCard,
-        sourceInput: sourceWord,
-        invalid: undefined,
-        data: {
-          word: sourceWord,
-          examples: [],
-        },
-        isEdited: true,
-        isRegenerating: false,
-        updatedAt: new Date().toISOString(),
-      },
-    })
-  }, [currentCard, dispatch])
+  const openEditTemplate = (templateId: string) => {
+    applyTemplate(templateId)
+    setSettingsOpen(false)
+    setTemplateBuilderMode('edit')
+    setTemplateBuilderOpen(true)
+  }
 
-  const invalidEditMode =
-    !!currentCard?.invalid && invalidInlineEdit?.cardId === currentCard.id
-  const currentCardBusy =
-    !!currentCard &&
-    (currentCard.isRegenerating || regeneratingCardId === currentCard.id)
-
-  const showCardSkeleton = isSessionGenerating && !state.session
-  const showCard = !showCardSkeleton
+  const handleTemplateSaved = (name: string, fields: Parameters<typeof customTemplateRepository.save>[1], templateId?: string) => {
+    if (templateBuilderMode === 'edit' && templateId) {
+      const updated = customTemplateRepository.update(templateId, name, fields)
+      setTemplatesRefreshKey((k) => k + 1)
+      applyTemplate(updated.id)
+      showToast(`Template “${name}” updated.`, 'success')
+    } else {
+      const created = customTemplateRepository.save(name, fields)
+      setTemplatesRefreshKey((k) => k + 1)
+      applyTemplate(created.id)
+      showToast(`Template “${name}” created.`, 'success')
+    }
+    setTemplateBuilderOpen(false)
+  }
 
   return (
-    <main className="mx-auto w-full max-w-[88rem] flex-1 px-4 py-6 sm:px-6 sm:py-8">
-      <p className="mx-auto mb-6 max-w-2xl text-center text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-        Generate cards, edit fields and layouts in place, then save drafts or individual cards to
-        your library.
-      </p>
-
-      <div className="grid gap-8 xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] xl:items-start xl:gap-10 2xl:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] 2xl:gap-12">
-        <aside className="mx-auto w-full max-w-md xl:mx-0 xl:max-w-none">
-          <form
-            onSubmit={handleSubmit}
-            className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6"
+    <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-8 pt-4 sm:px-6">
+      <header className="mb-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            disabled={busy}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 transition active:scale-95 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300"
+            aria-label="Open settings"
           >
-            <TextAreaField
-              id="words-input"
-              label="Words or phrases"
-              placeholder="One per line or comma-separated"
-              value={input}
-              onChange={(ev) => setInput(ev.target.value)}
-              hint="No row limit — large decks stay in draft until you save."
-              disabled={isSessionGenerating}
-            />
-            <Button
-              type="submit"
-              variant="primary"
-              loading={isSessionGenerating}
-              className="w-full"
-            >
-              {isGenerating ? 'Generating…' : 'Generate card(s)'}
-            </Button>
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
+              />
+            </svg>
+          </button>
+          <h1 className="min-w-0 truncate text-[22px] font-bold tracking-tight text-slate-900 dark:text-white">
+            Make Card
+          </h1>
+        </div>
+      </header>
 
-            <div className="grid gap-4 sm:grid-cols-1">
-              <SelectField
-                id="source-lang"
-                label="Source language"
-                options={LANGUAGE_OPTIONS}
-                value={sourceLanguage}
-                onChange={(e) => setSourceLanguage(e.target.value)}
-                disabled={isSessionGenerating}
-              />
-              <SelectField
-                id="target-lang"
-                label="Target language"
-                options={LANGUAGE_OPTIONS.filter((o) => o.value !== 'auto')}
-                value={targetLanguage}
-                onChange={(e) => setTargetLanguage(e.target.value)}
-                disabled={isSessionGenerating}
-              />
-            </div>
-
-            <SelectField
-              id="example-count"
-              label="Example count"
-              options={EXAMPLE_COUNT_OPTIONS.map((n) => ({
-                value: String(n),
-                label: String(n),
-              }))}
-              value={String(options.exampleCount)}
-              onChange={(e) => updateOption('exampleCount', Number.parseInt(e.target.value, 10))}
-              disabled={isSessionGenerating}
-            />
-
-            <fieldset className="space-y-2" disabled={isSessionGenerating}>
-              <legend className="mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">
-                Card content
-              </legend>
-              <ToggleField
-                id="opt-phonetic"
-                label="Include phonetic"
-                checked={options.includePhonetic}
-                onChange={(v) => updateOption('includePhonetic', v)}
-              />
-              <ToggleField
-                id="opt-pos"
-                label="Include part of speech"
-                checked={options.includePartOfSpeech}
-                onChange={(v) => updateOption('includePartOfSpeech', v)}
-              />
-              <ToggleField
-                id="opt-target"
-                label="Include target meaning"
-                checked={options.includeTargetMeaning}
-                onChange={(v) => updateOption('includeTargetMeaning', v)}
-              />
-              <ToggleField
-                id="opt-english"
-                label="Include English meaning"
-                checked={options.includeEnglishMeaning}
-                onChange={(v) => updateOption('includeEnglishMeaning', v)}
-              />
-              <ToggleField
-                id="opt-trans"
-                label="Include example translations"
-                checked={options.includeExampleTranslations}
-                onChange={(v) => updateOption('includeExampleTranslations', v)}
-              />
-            </fieldset>
-
-            <div className="grid gap-4 sm:grid-cols-1">
-              <SelectField
-                id="tone"
-                label="Tone"
-                options={TONE_OPTIONS}
-                value={options.tone}
-                onChange={(e) => updateOption('tone', e.target.value as CardGenerationOptionsDto['tone'])}
-                disabled={isSessionGenerating}
-              />
-              <SelectField
-                id="difficulty"
-                label="Difficulty"
-                options={DIFFICULTY_OPTIONS}
-                value={options.difficulty}
-                onChange={(e) =>
-                  updateOption('difficulty', e.target.value as CardGenerationOptionsDto['difficulty'])
+      <section className="mb-6 space-y-4">
+        <EditableTemplateCard
+          template={cardTemplate}
+          draft={draft}
+          onChange={setDraft}
+          disabled={busy}
+          wordAiGenerate={
+            aiAvailable
+              ? {
+                  onGenerate: generateFromWord,
+                  busy: isGenerating,
+                  disabled: busy,
                 }
-                disabled={isSessionGenerating}
-              />
-            </div>
+              : undefined
+          }
+        />
 
-            {state.session ? (
-              <p className="text-xs text-amber-700 dark:text-amber-400/90">
-                Generating again replaces the current draft. Saved library entries stay.
-              </p>
-            ) : null}
+        {formError ? (
+          <p className="text-[13px] text-red-600" role="alert">
+            {formError}
+          </p>
+        ) : null}
 
-            {formError ? (
-              <div
-                className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200"
-                role="alert"
-              >
-                <p>{formError}</p>
-                <button
-                  type="submit"
-                  className="mt-2 text-xs font-semibold text-red-700 underline underline-offset-2 hover:text-red-900 dark:text-red-300 dark:hover:text-red-100"
-                >
-                  Try again
-                </button>
-              </div>
-            ) : null}
-          </form>
+        <button
+          type="button"
+          onClick={() => void saveCard()}
+          disabled={busy}
+          className="flex h-14 w-full items-center justify-center rounded-2xl bg-accent text-[16px] font-bold text-white disabled:opacity-40"
+        >
+          {saveBusy ? 'Saving…' : 'Save Card'}
+        </button>
+      </section>
 
-          {state.session ? (
-            <Button
-              type="button"
-              variant="secondary"
-              className="mt-4 w-full"
-              disabled={isSessionGenerating}
-              onClick={() => {
-                if (window.confirm('Discard the entire draft session on this screen?')) {
-                  dispatch({ type: 'CLEAR_SESSION' })
-                }
-              }}
-            >
-              Clear draft session
-            </Button>
-          ) : null}
-        </aside>
+      <AddCardSettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        busy={busy}
+        selectedTemplateId={selectedTemplateId}
+        deckDefaultTemplateId={deckDefaultTemplateId}
+        templatesRefreshKey={templatesRefreshKey}
+        showAiSettings={showAiSettings}
+        languageSettings={languageSettings}
+        onTemplateChange={applyTemplate}
+        onCreateTemplate={openCreateTemplate}
+        onEditTemplate={openEditTemplate}
+        onLanguageSettingsChange={setLanguageSettings}
+        onSave={saveSettings}
+      />
 
-        <section className="flex min-h-0 w-full max-w-3xl flex-col items-center gap-3 xl:mx-auto xl:max-w-[46rem]">
-          {draftSavedBanner && !state.session ? (
-            <div
-              className="w-full rounded-xl border border-emerald-200/80 bg-emerald-50/90 px-4 py-3 text-center text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100"
-              role="status"
-            >
-              <p className="font-medium">Draft saved to your library.</p>
-              <p className="mt-1 text-[13px] text-emerald-800/90 dark:text-emerald-200/80">
-                Generate new words below to start another draft session.
-              </p>
-            </div>
-          ) : null}
-
-          {showCardSkeleton ? <CardAreaSkeleton /> : null}
-
-          {showCard ? (
-            <>
-              {inDraftSession && currentCard?.invalid ? (
-                <UnknownWordCard
-                  originalWord={currentCard.invalid.originalWord}
-                  suggestions={currentCard.invalid.suggestions}
-                  editMode={invalidEditMode}
-                  draft={invalidInlineEdit?.draft ?? currentCard.invalid.originalWord}
-                  busy={currentCardBusy}
-                  onDraftChange={(draft) => {
-                    if (!currentCard) return
-                    setInvalidInlineEdit({ cardId: currentCard.id, draft })
-                  }}
-                  onStartEdit={() => {
-                    if (!currentCard?.invalid) return
-                    setInvalidInlineEdit({
-                      cardId: currentCard.id,
-                      draft: currentCard.invalid.originalWord,
-                    })
-                  }}
-                  onCancelEdit={() => setInvalidInlineEdit(null)}
-                  onSaveAndGenerate={() => {
-                    const draft = invalidInlineEdit?.draft.trim()
-                    if (!draft) return
-                    regenerateCurrentCardOnly(draft)
-                  }}
-                  onSuggestion={(word) => regenerateCurrentCardOnly(word)}
-                  onUseWordAnyway={useWordAnyway}
-                />
-              ) : (
-                <InlineSessionCard
-                  displayData={displayData}
-                  frontLayout={frontLayout}
-                  backLayout={backLayout}
-                  onLayoutsChange={setLayouts}
-                  onPatchCardData={
-                    inDraftSession && currentCard
-                      ? (patch) =>
-                          dispatch({
-                            type: 'UPDATE_CARD_DATA',
-                            cardId: currentCard.id,
-                            data: patch,
-                          })
-                      : undefined
-                  }
-                  isRegenerating={
-                    !!currentCard?.isRegenerating ||
-                    (isSessionGenerating && !!state.session)
-                  }
-                  previewMode={!inDraftSession}
-                />
-              )}
-
-              {inDraftSession ? (
-                <div className="flex w-full flex-col items-center gap-1">
-                  <CardNavigation
-                    currentIndex={state.currentIndex}
-                    total={total}
-                    onPrev={() => dispatch({ type: 'NAV_PREV' })}
-                    onNext={() => dispatch({ type: 'NAV_NEXT' })}
-                    disabled={total === 0 || isSessionGenerating}
-                  />
-                  <p className="text-center text-[11px] text-slate-400 dark:text-slate-500">
-                    Arrow keys move between cards (← · →) when not typing
-                  </p>
-                </div>
-              ) : null}
-
-              {!inDraftSession && !isSessionGenerating && !draftSavedBanner ? (
-                <p className="text-center text-sm text-slate-500 dark:text-slate-500">
-                  Enter words and generate to start a draft session.
-                </p>
-              ) : null}
-            </>
-          ) : null}
-        </section>
-      </div>
+      <TemplateBuilderSheet
+        open={templateBuilderOpen}
+        busy={busy}
+        mode={templateBuilderMode}
+        initialTemplate={templateBuilderMode === 'edit' ? cardTemplate : null}
+        onClose={() => setTemplateBuilderOpen(false)}
+        onSave={handleTemplateSaved}
+      />
     </main>
   )
 }

@@ -3,6 +3,7 @@ import {
   findInboxDeck,
   isReservedInboxName,
 } from '@/domain/inboxDeck'
+import { resolveDeckDefaultTemplateId } from '@/domain/resolveDeckTemplate'
 import { createDefaultStudyProgress } from '@/domain/studyDefaults'
 import { renderCardFaceText } from '@/utils/renderCardFace'
 import { storage } from '@/storage/adapter'
@@ -17,12 +18,17 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
-function savedCardFromGenerated(card: CommitCardsSource['cardsToCommit'][0], deckId: string): SavedCard {
+function savedCardFromGenerated(
+  card: CommitCardsSource['cardsToCommit'][0],
+  deckId: string,
+  fallbackTemplateId: string,
+): SavedCard {
   const t = nowIso()
   return {
     id: newId(),
     originalGeneratedCardId: card.id,
     deckId,
+    templateId: card.templateId ?? fallbackTemplateId,
     front: renderCardFaceText(card.data, card.frontLayout),
     back: renderCardFaceText(card.data, card.backLayout),
     data: { ...card.data, examples: card.data.examples.map((e) => ({ ...e })) },
@@ -88,7 +94,8 @@ export async function persistCommitToDeck(
     deckName = deckRow.name
   }
 
-  const savedCards = cardsToCommit.map((c) => savedCardFromGenerated(c, deckId))
+  const fallbackTemplateId = resolveDeckDefaultTemplateId(deckRow)
+  const savedCards = cardsToCommit.map((c) => savedCardFromGenerated(c, deckId, fallbackTemplateId))
   await storage.cards.putMany(savedCards)
 
   return { deckId, deckName, savedCards }

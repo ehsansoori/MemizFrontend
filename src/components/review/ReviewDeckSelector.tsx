@@ -3,7 +3,7 @@ import { findInboxDeck, sortDecksWithInboxFirst } from '@/domain/inboxDeck'
 import { useLibraryStore } from '@/store/library/libraryStore'
 
 /** Deck picker shown as the main title on the Review page. */
-export function ReviewDeckSelector() {
+export function ReviewDeckSelector({ variant = 'default' }: { variant?: 'default' | 'study' }) {
   const decks = useLibraryStore((s) => s.decks)
   const activeDeckId = useLibraryStore((s) => s.activeDeckId)
   const setActiveDeckId = useLibraryStore((s) => s.setActiveDeckId)
@@ -39,18 +39,24 @@ export function ReviewDeckSelector() {
   const label = activeDeck?.name ?? 'Inbox'
   const disabled = !hydrated || sortedDecks.length === 0
 
+  const isStudy = variant === 'study'
+
   return (
-    <div ref={wrapRef} className="relative mb-3">
+    <div ref={wrapRef} className={isStudy ? 'relative min-w-0' : 'relative mb-3'}>
       <button
         type="button"
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="inline-flex max-w-full items-center gap-1 text-left text-[15px] font-semibold text-accent hover:underline disabled:opacity-50"
+        className={
+          isStudy
+            ? 'inline-flex max-w-[10rem] items-center gap-1 truncate text-left text-[15px] font-semibold text-slate-900 dark:text-white disabled:opacity-50'
+            : 'inline-flex max-w-full items-center gap-1 text-left text-[15px] font-semibold text-accent hover:underline disabled:opacity-50'
+        }
         onClick={() => setOpen((o) => !o)}
       >
         <span className="truncate">{label}</span>
-        <span className="text-[11px] font-normal" aria-hidden>
+        <span className="text-[11px] font-normal text-slate-400" aria-hidden>
           ▾
         </span>
       </button>
@@ -59,7 +65,10 @@ export function ReviewDeckSelector() {
         <ul
           role="listbox"
           aria-label="Deck"
-          className="absolute left-0 z-50 mt-0.5 max-h-56 min-w-[10rem] overflow-y-auto border border-slate-200 bg-white py-0.5 shadow-sm dark:border-slate-600 dark:bg-slate-900"
+          className={[
+            'absolute z-50 mt-1 max-h-56 min-w-[10rem] overflow-y-auto rounded-2xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-900',
+            isStudy ? 'left-0' : 'left-0',
+          ].join(' ')}
         >
           {sortedDecks.map((d) => {
             const selected = d.id === activeDeckId
@@ -68,7 +77,7 @@ export function ReviewDeckSelector() {
                 <button
                   type="button"
                   className={[
-                    'block w-full px-3 py-1.5 text-left text-[13px] hover:bg-slate-100 dark:hover:bg-slate-800',
+                    'block w-full px-4 py-2.5 text-left text-[14px] transition hover:bg-slate-100 dark:hover:bg-slate-800',
                     selected
                       ? 'font-semibold text-accent'
                       : 'text-slate-800 dark:text-slate-200',

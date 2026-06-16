@@ -7,6 +7,7 @@ import {
   createDeckInStorage,
   deleteDeckInStorage,
   renameDeckInStorage,
+  updateDeckSettingsInStorage,
   type DeleteDeckMode,
 } from '@/store/library/deckManagement'
 import type {
@@ -14,6 +15,7 @@ import type {
   CommitToDeckResult,
 } from '@/store/library/types'
 import type { Deck, SavedCard } from '@/types/cards'
+import type { CreateDeckParams, DeckSettings } from '@/types/deckProfile'
 
 type LibraryState = {
   decks: Deck[]
@@ -32,7 +34,8 @@ type LibraryActions = {
   ) => Promise<CommitToDeckResult>
   reload: () => Promise<void>
   setActiveDeckId: (deckId: string) => Promise<void>
-  createDeck: (name: string) => Promise<Deck>
+  createDeck: (params: CreateDeckParams) => Promise<Deck>
+  updateDeckSettings: (deckId: string, settings: DeckSettings) => Promise<void>
   renameDeck: (deckId: string, name: string) => Promise<void>
   deleteDeck: (deckId: string, mode: DeleteDeckMode) => Promise<void>
 }
@@ -120,12 +123,18 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
     })
   },
 
-  createDeck: async (name) => {
-    const deck = await createDeckInStorage(name)
+  createDeck: async (params) => {
+    const deck = await createDeckInStorage(params)
     await storage.settings.setActiveDeckId(deck.id)
     const { decks, cards } = await loadLibrary()
     set({ decks, cards, activeDeckId: deck.id })
     return deck
+  },
+
+  updateDeckSettings: async (deckId, settings) => {
+    await updateDeckSettingsInStorage(deckId, settings)
+    const { decks, cards, activeDeckId } = await loadLibrary()
+    set({ decks, cards, activeDeckId })
   },
 
   renameDeck: async (deckId, name) => {

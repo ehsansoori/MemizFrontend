@@ -1,4 +1,5 @@
 import type { GeneratedCardData } from '@/types/cards'
+import type { DeckSettings, DeckTypeId } from '@/types/deckProfile'
 import type { StudyProgress } from '@/types/study'
 
 /** Local-first sync lifecycle (ready for PostgreSQL / API sync later). */
@@ -20,12 +21,18 @@ export interface StoredDeck extends SyncMetadata {
   id: string
   name: string
   lastUsedAt?: string
+  deckTypeId?: DeckTypeId
+  defaultTemplateId?: string
+  /** @deprecated Use defaultTemplateId */
+  templateId?: string
+  settings?: DeckSettings
 }
 
 export interface StoredCard extends SyncMetadata {
   id: string
   deckId: string
   originalGeneratedCardId: string
+  templateId?: string
   front: string
   back: string
   data: GeneratedCardData

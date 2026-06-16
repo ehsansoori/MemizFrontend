@@ -16,7 +16,7 @@ export function AppNav() {
         Review
       </NavLink>
       <NavLink to="/add-cards" className={linkClass}>
-        Add Cards
+        Make Card
       </NavLink>
     </nav>
   )

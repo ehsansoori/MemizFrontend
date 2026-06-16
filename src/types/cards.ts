@@ -34,6 +34,7 @@ export interface ExampleSentenceDto {
 }
 
 import type { StudyProgress } from '@/types/study'
+import type { DeckSettings, DeckTypeId } from '@/types/deckProfile'
 
 /** --- Session & persistence domain models --- */
 
@@ -86,6 +87,8 @@ export interface GenerationMetadata {
 export interface GeneratedCard {
   id: string
   sourceInput: string
+  /** Template used when this card was generated. */
+  templateId?: string
   frontLayout: CardFieldLayout[]
   backLayout: CardFieldLayout[]
   data: GeneratedCardData
@@ -118,6 +121,14 @@ export interface Deck {
   updatedAt: string
   /** Updated when a card is committed to this deck (for “recent” ordering). */
   lastUsedAt?: string
+  /** Subject / purpose of the deck */
+  deckTypeId?: DeckTypeId
+  /** Default template for newly created cards (existing cards keep their own template). */
+  defaultTemplateId?: string
+  /** @deprecated Use defaultTemplateId */
+  templateId?: string
+  /** Deck-level settings (e.g. language pair) — not card fields */
+  settings?: DeckSettings
 }
 
 /** Persisted deck card (IndexedDB library + future Leitner). */
@@ -125,6 +136,8 @@ export interface SavedCard {
   id: string
   originalGeneratedCardId: string
   deckId: string
+  /** Template that defines this card's field structure. */
+  templateId?: string
   front: string
   back: string
   data: GeneratedCardData
