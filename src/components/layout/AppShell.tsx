@@ -5,6 +5,7 @@ import { WorkspaceHeaderStrip } from '@/components/controls/WorkspaceHeaderStrip
 export function AppShell() {
   const { pathname } = useLocation()
   const onAddCards = pathname === '/add-cards'
+  const onQuiz = /^\/decks\/[^/]+\/quiz$/.test(pathname)
 
   const trailing = onAddCards ? (
     <div className="hidden items-center gap-3 sm:flex">
@@ -14,7 +15,7 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-white dark:bg-slate-950">
-      <AppHeader trailing={trailing} />
+      {!onQuiz ? <AppHeader trailing={trailing} /> : null}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <Outlet />
       </div>

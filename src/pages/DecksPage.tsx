@@ -93,7 +93,7 @@ export function DecksPage() {
 
   const startReview = async (deckId: string) => {
     await setActiveDeckId(deckId)
-    navigate('/review')
+    navigate(`/decks/${deckId}/quiz`)
   }
 
   const handleShare = async (deck: Deck) => {

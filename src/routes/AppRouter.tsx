@@ -2,6 +2,8 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/layout/AppShell'
 import { AddPage } from '@/pages/AddPage'
 import { DeckDetailsPage } from '@/pages/DeckDetailsPage'
+import { DeckQuizPage } from '@/pages/DeckQuizPage'
+import { DeckStudyPage } from '@/pages/DeckStudyPage'
 import { DecksPage } from '@/pages/DecksPage'
 import { ReviewPage } from '@/pages/ReviewPage'
 import { SearchPage } from '@/pages/SearchPage'
@@ -20,11 +22,13 @@ export function AppRouter() {
         <Route index element={<Navigate to="/decks" replace />} />
         <Route path="decks" element={<DecksPage />} />
         <Route path="decks/:deckId" element={<DeckDetailsPage />} />
+        <Route path="decks/:deckId/study" element={<DeckStudyPage />} />
+        <Route path="decks/:deckId/quiz" element={<DeckQuizPage />} />
         <Route path="search" element={<SearchPage />} />
         <Route path="review" element={<ReviewPage />} />
         <Route path="add-cards" element={<AddPage />} />
         <Route path="add" element={<Navigate to="/add-cards" replace />} />
-        <Route path="study" element={<Navigate to="/review" replace />} />
+        <Route path="study" element={<Navigate to="/decks" replace />} />
         <Route path="*" element={<Navigate to="/decks" replace />} />
       </Route>
     </Routes>
