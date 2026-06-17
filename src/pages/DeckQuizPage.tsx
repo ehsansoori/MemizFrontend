@@ -215,36 +215,46 @@ export function DeckQuizPage() {
           </Link>
         </div>
       ) : currentCard ? (
-        <>
-          <div className="flex flex-1 flex-col items-center justify-center px-4 py-6">
-            <ReviewFlashcard key={currentCard.id} card={currentCard} showAnswer={showAnswer} />
+        <div
+          className={[
+            'mx-auto flex min-h-0 w-full max-w-lg flex-1 flex-col px-4 py-3 md:max-w-xl md:px-6 md:py-6 lg:max-w-2xl',
+            showAnswer ? 'items-stretch' : 'items-center justify-center',
+          ].join(' ')}
+        >
+          <ReviewFlashcard
+            key={currentCard.id}
+            card={currentCard}
+            showAnswer={showAnswer}
+            footer={
+              showAnswer ? (
+                <>
+                  <ReviewRatingButtons onRate={(r) => void handleRate(r)} disabled={ratingBusy} />
+                  <p className="mt-2 text-center text-[11px] text-slate-400 dark:text-slate-500">
+                    1 Again · 2 Hard · 3 Good · 4 Easy
+                  </p>
+                </>
+              ) : undefined
+            }
+          />
 
-            {!showAnswer ? (
-              <button
-                type="button"
-                onClick={() => setShowAnswer(true)}
-                className="review-show-answer-animate mt-6 flex h-14 w-full max-w-lg items-center justify-center rounded-2xl bg-accent text-[16px] font-bold text-white shadow-lg shadow-accent/25 transition active:scale-[0.98]"
-              >
-                Show Answer
-              </button>
-            ) : null}
-          </div>
+          {!showAnswer ? (
+            <button
+              type="button"
+              onClick={() => setShowAnswer(true)}
+              className="review-show-answer-animate mt-6 flex h-14 w-full items-center justify-center rounded-2xl bg-accent text-[16px] font-bold text-white shadow-lg shadow-accent/25 transition active:scale-[0.98]"
+            >
+              Show Answer
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
-          {showAnswer ? (
-            <footer className="shrink-0 border-t border-slate-200/80 bg-white/95 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm dark:border-slate-800 dark:bg-surface-950/95">
-              <ReviewRatingButtons onRate={(r) => void handleRate(r)} disabled={ratingBusy} />
-              <p className="mt-2 text-center text-[11px] text-slate-400 dark:text-slate-500">
-                1 Again · 2 Hard · 3 Good · 4 Easy
-              </p>
-            </footer>
-          ) : (
-            <footer className="shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
-              <p className="text-center text-[12px] text-slate-400 dark:text-slate-500">
-                Tap Show Answer or press Space
-              </p>
-            </footer>
-          )}
-        </>
+      {!showAnswer && total > 0 && currentCard ? (
+        <footer className="shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
+          <p className="text-center text-[12px] text-slate-400 dark:text-slate-500">
+            Tap Show Answer or press Space
+          </p>
+        </footer>
       ) : null}
     </div>
   )

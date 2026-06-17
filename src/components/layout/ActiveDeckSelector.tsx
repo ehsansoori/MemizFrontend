@@ -6,12 +6,18 @@ type ActiveDeckSelectorProps = {
   /** Full-width field style for page headers (e.g. Make Card). */
   variant?: 'default' | 'field'
   className?: string
+  /** Lock to a specific deck (read-only, no dropdown). */
+  fixedDeckId?: string
 }
 
 const fieldTriggerClass =
   'flex h-12 w-full items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-left text-[15px] font-medium text-slate-900 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100'
 
-export function ActiveDeckSelector({ variant = 'default', className }: ActiveDeckSelectorProps) {
+export function ActiveDeckSelector({
+  variant = 'default',
+  className,
+  fixedDeckId,
+}: ActiveDeckSelectorProps) {
   const decks = useLibraryStore((s) => s.decks)
   const activeDeckId = useLibraryStore((s) => s.activeDeckId)
   const setActiveDeckId = useLibraryStore((s) => s.setActiveDeckId)
@@ -21,10 +27,10 @@ export function ActiveDeckSelector({ variant = 'default', className }: ActiveDec
   const wrapRef = useRef<HTMLDivElement>(null)
 
   const sortedDecks = useMemo(() => sortDecksWithInboxFirst(decks), [decks])
-  const activeDeck = useMemo(
-    () => decks.find((d) => d.id === activeDeckId) ?? findInboxDeck(decks),
-    [decks, activeDeckId],
-  )
+  const activeDeck = useMemo(() => {
+    if (fixedDeckId) return decks.find((d) => d.id === fixedDeckId)
+    return decks.find((d) => d.id === activeDeckId) ?? findInboxDeck(decks)
+  }, [decks, activeDeckId, fixedDeckId])
 
   useEffect(() => {
     if (!open) return
@@ -45,7 +51,8 @@ export function ActiveDeckSelector({ variant = 'default', className }: ActiveDec
   }, [open])
 
   const label = activeDeck?.name ?? 'Inbox'
-  const disabled = !hydrated || sortedDecks.length === 0
+  const locked = Boolean(fixedDeckId)
+  const disabled = locked || !hydrated || sortedDecks.length === 0
   const isField = variant === 'field'
 
   return (
@@ -61,7 +68,7 @@ export function ActiveDeckSelector({ variant = 'default', className }: ActiveDec
             ? fieldTriggerClass
             : 'inline-flex max-w-[12rem] items-center gap-0.5 truncate text-[13px] text-accent hover:underline disabled:opacity-50'
         }
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => !locked && setOpen((o) => !o)}
       >
         <span className="truncate">{label}</span>
         <span className={isField ? 'shrink-0 text-slate-400' : 'text-[10px]'} aria-hidden>
@@ -69,7 +76,7 @@ export function ActiveDeckSelector({ variant = 'default', className }: ActiveDec
         </span>
       </button>
 
-      {open ? (
+      {open && !locked ? (
         <ul
           role="listbox"
           aria-label="Active deck"

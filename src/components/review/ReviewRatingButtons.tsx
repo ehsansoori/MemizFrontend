@@ -39,7 +39,7 @@ const RATINGS: {
 export function ReviewRatingButtons({ onRate, disabled }: ReviewRatingButtonsProps) {
   return (
     <div
-      className="grid grid-cols-4 gap-2"
+      className="mx-auto grid w-full grid-cols-4 gap-2 md:gap-3"
       role="group"
       aria-label="Rate your recall"
     >
@@ -50,7 +50,7 @@ export function ReviewRatingButtons({ onRate, disabled }: ReviewRatingButtonsPro
           disabled={disabled}
           onClick={() => onRate(rating.id)}
           className={[
-            'flex min-h-[52px] flex-col items-center justify-center rounded-2xl text-[13px] font-bold transition active:scale-[0.97] disabled:opacity-40',
+            'flex min-h-[56px] flex-col items-center justify-center rounded-2xl text-[14px] font-bold transition active:scale-[0.97] disabled:opacity-40',
             rating.className,
           ].join(' ')}
         >

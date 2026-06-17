@@ -6,7 +6,6 @@ export type DeckAddCardsSheetProps = {
   busy?: boolean
   onClose: () => void
   onAddCards: () => void
-  onGenerateAi: () => void
   onImport: () => void
 }
 
@@ -67,7 +66,6 @@ export function DeckAddCardsSheet({
   busy,
   onClose,
   onAddCards,
-  onGenerateAi,
   onImport,
 }: DeckAddCardsSheetProps) {
   return (
@@ -90,18 +88,6 @@ export function DeckAddCardsSheet({
           label="Make Card"
           description="Open the card workspace for this deck"
           onClick={onAddCards}
-          disabled={busy}
-        />
-        <ActionRow
-          icon={
-            <svg {...svgProps}>
-              <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3Z" />
-              <path d="M5 19l1 3 1-3 3-1-3-1-1-3-1 3-3 1 3 1 1 3Z" />
-            </svg>
-          }
-          label="Generate with AI"
-          description="Create flashcards from your input"
-          onClick={onGenerateAi}
           disabled={busy}
         />
         <ActionRow

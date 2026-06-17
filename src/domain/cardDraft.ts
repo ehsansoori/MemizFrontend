@@ -1,4 +1,4 @@
-import type { ExampleSentenceDto, GeneratedCardData } from '@/types/cards'
+import type { ExampleSentenceDto, GeneratedCardData, SavedCard } from '@/types/cards'
 import type { CardTemplate } from '@/types/deckProfile'
 import {
   getDefinitionConfig,
@@ -70,6 +70,10 @@ export function generatedCardToDraft(
     definitions: defs.slice(0, Math.max(defs.length, base.definitions.length)),
     customSlots: {},
   }
+}
+
+export function savedCardToDraft(card: SavedCard, template: CardTemplate): CardDraft {
+  return generatedCardToDraft(card.data, template)
 }
 
 export function draftToTemplateValues(draft: CardDraft, template: CardTemplate): TemplateFieldValues {

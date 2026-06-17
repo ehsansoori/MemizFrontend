@@ -53,6 +53,11 @@ export function DeckDetailsPage() {
     return <Navigate to="/decks" replace />
   }
 
+  const openBrowse = () => {
+    if (!deckId) return
+    navigate(`/decks/${deckId}/browse`)
+  }
+
   const openStudy = () => {
     if (!deckId) return
     navigate(`/decks/${deckId}/study`)
@@ -154,12 +159,23 @@ export function DeckDetailsPage() {
           <StatPill label="Review" value={queueCounts.review} />
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-3">
+        <div className="mt-5 grid grid-cols-3 gap-2">
+          <button
+            type="button"
+            disabled={total === 0}
+            onClick={openBrowse}
+            className="flex h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white text-[13px] font-bold text-slate-800 transition active:scale-[0.98] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 sm:text-[14px]"
+          >
+            <svg className="h-5 w-5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+              <path strokeLinecap="round" d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+            </svg>
+            Browse
+          </button>
           <button
             type="button"
             disabled={total === 0}
             onClick={openStudy}
-            className="flex h-14 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white text-[15px] font-bold text-slate-800 transition active:scale-[0.98] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100"
+            className="flex h-14 flex-col items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white text-[13px] font-bold text-slate-800 transition active:scale-[0.98] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 sm:text-[14px]"
           >
             <svg className="h-5 w-5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
               <path strokeLinecap="round" d="M4 19.5V4.5M9.5 9.5h5M9.5 14h5M20 19.5V4.5" />
@@ -170,7 +186,7 @@ export function DeckDetailsPage() {
             type="button"
             disabled={total === 0}
             onClick={() => void openQuiz()}
-            className="flex h-14 items-center justify-center gap-2 rounded-2xl bg-accent text-[15px] font-bold text-white shadow-lg shadow-accent/25 transition active:scale-[0.98] disabled:opacity-50"
+            className="flex h-14 flex-col items-center justify-center gap-1 rounded-2xl bg-accent text-[13px] font-bold text-white shadow-lg shadow-accent/25 transition active:scale-[0.98] disabled:opacity-50 sm:text-[14px]"
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
               <path d="m8 5 11 7-11 7V5Z" />
@@ -181,11 +197,11 @@ export function DeckDetailsPage() {
 
         {total === 0 ? (
           <p className="mt-4 text-center text-[13px] text-slate-500 dark:text-slate-400">
-            Add cards to start studying or quizzing.
+            Add cards to browse, study, or quiz.
           </p>
         ) : (
           <p className="mt-4 text-center text-[12px] text-slate-400 dark:text-slate-500">
-            Study to browse and edit · Quiz to test recall and update progress
+            Browse to find · Study to learn · Quiz to test recall
           </p>
         )}
       </section>
@@ -215,7 +231,6 @@ export function DeckDetailsPage() {
         busy={false}
         onClose={() => setAddSheetOpen(false)}
         onAddCards={() => void openAddCards()}
-        onGenerateAi={() => void openAddCards()}
         onImport={handleImport}
       />
     </main>
