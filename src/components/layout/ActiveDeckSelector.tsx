@@ -2,7 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { findInboxDeck, sortDecksWithInboxFirst } from '@/domain/inboxDeck'
 import { useLibraryStore } from '@/store/library/libraryStore'
 
-export function ActiveDeckSelector() {
+type ActiveDeckSelectorProps = {
+  /** Full-width field style for page headers (e.g. Make Card). */
+  variant?: 'default' | 'field'
+  className?: string
+}
+
+const fieldTriggerClass =
+  'flex h-12 w-full items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-left text-[15px] font-medium text-slate-900 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100'
+
+export function ActiveDeckSelector({ variant = 'default', className }: ActiveDeckSelectorProps) {
   const decks = useLibraryStore((s) => s.decks)
   const activeDeckId = useLibraryStore((s) => s.activeDeckId)
   const setActiveDeckId = useLibraryStore((s) => s.setActiveDeckId)
@@ -37,19 +46,25 @@ export function ActiveDeckSelector() {
 
   const label = activeDeck?.name ?? 'Inbox'
   const disabled = !hydrated || sortedDecks.length === 0
+  const isField = variant === 'field'
 
   return (
-    <div ref={wrapRef} className="relative min-w-0">
+    <div ref={wrapRef} className={['relative min-w-0', className].filter(Boolean).join(' ')}>
       <button
         type="button"
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="inline-flex max-w-[12rem] items-center gap-0.5 truncate text-[13px] text-accent hover:underline disabled:opacity-50"
+        aria-label={isField ? `Active deck: ${label}` : undefined}
+        className={
+          isField
+            ? fieldTriggerClass
+            : 'inline-flex max-w-[12rem] items-center gap-0.5 truncate text-[13px] text-accent hover:underline disabled:opacity-50'
+        }
         onClick={() => setOpen((o) => !o)}
       >
         <span className="truncate">{label}</span>
-        <span className="text-[10px]" aria-hidden>
+        <span className={isField ? 'shrink-0 text-slate-400' : 'text-[10px]'} aria-hidden>
           ▾
         </span>
       </button>
@@ -58,7 +73,10 @@ export function ActiveDeckSelector() {
         <ul
           role="listbox"
           aria-label="Active deck"
-          className="absolute right-0 z-50 mt-0.5 max-h-56 min-w-[10rem] overflow-y-auto border border-slate-200 bg-white py-0.5 shadow-sm dark:border-slate-600 dark:bg-slate-900"
+          className={[
+            'absolute z-50 mt-1.5 max-h-56 overflow-y-auto border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-900',
+            isField ? 'left-0 right-0 rounded-2xl' : 'right-0 min-w-[10rem]',
+          ].join(' ')}
         >
           {sortedDecks.map((d) => {
             const selected = d.id === activeDeckId
@@ -67,7 +85,7 @@ export function ActiveDeckSelector() {
                 <button
                   type="button"
                   className={[
-                    'block w-full px-3 py-1.5 text-left text-[13px] hover:bg-slate-100 dark:hover:bg-slate-800',
+                    'block w-full px-4 py-2.5 text-left text-[15px] transition hover:bg-slate-100 dark:hover:bg-slate-800',
                     selected
                       ? 'font-semibold text-accent'
                       : 'text-slate-800 dark:text-slate-200',

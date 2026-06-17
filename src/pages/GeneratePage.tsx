@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AddCardSettingsSheet } from '@/components/addCards/AddCardSettingsSheet'
+import { ActiveDeckSelector } from '@/components/layout/ActiveDeckSelector'
 import { EditableTemplateCard } from '@/components/addCards/EditableTemplateCard'
 import { TemplateBuilderSheet } from '@/components/addCards/TemplateBuilderSheet'
 import {
@@ -59,7 +60,6 @@ export function GeneratePageInner() {
     [selectedTemplateId, templatesRefreshKey],
   )
   const showAiSettings = deckTypeSupportsLanguageSettings(activeDeck?.deckTypeId)
-  const aiAvailable = showAiSettings
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [templateBuilderOpen, setTemplateBuilderOpen] = useState(false)
@@ -112,10 +112,6 @@ export function GeneratePageInner() {
       showToast('Enter a word or phrase first.', 'error')
       return
     }
-    if (!aiAvailable) {
-      showToast('AI generation is available for Language Learning decks.', 'error')
-      return
-    }
 
     setFormError(null)
     generateMutation.mutate(
@@ -150,7 +146,6 @@ export function GeneratePageInner() {
     )
   }, [
     wordInput,
-    aiAvailable,
     generateMutation,
     buildGenerateForm,
     cardTemplate,
@@ -236,8 +231,8 @@ export function GeneratePageInner() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-8 pt-4 sm:px-6">
-      <header className="mb-4">
+    <main className="mx-auto w-full max-w-lg px-4 pb-8 pt-4 sm:px-6">
+      <header className="mb-4 space-y-3">
         <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
@@ -247,22 +242,23 @@ export function GeneratePageInner() {
             aria-label="Open settings"
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-              <path
+             <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
               />
-              <path
+              <path 
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
               />
             </svg>
           </button>
-          <h1 className="min-w-0 truncate text-[22px] font-bold tracking-tight text-slate-900 dark:text-white">
+          <h1 className="min-w-0 text-[22px] font-bold tracking-tight text-slate-900 dark:text-white">
             Make Card
           </h1>
         </div>
+        <ActiveDeckSelector variant="field" />
       </header>
 
       <section className="mb-6 space-y-4">
@@ -271,15 +267,11 @@ export function GeneratePageInner() {
           draft={draft}
           onChange={setDraft}
           disabled={busy}
-          wordAiGenerate={
-            aiAvailable
-              ? {
-                  onGenerate: generateFromWord,
-                  busy: isGenerating,
-                  disabled: busy,
-                }
-              : undefined
-          }
+          wordAiGenerate={{
+            onGenerate: generateFromWord,
+            busy: isGenerating,
+            disabled: busy,
+          }}
         />
 
         {formError ? (

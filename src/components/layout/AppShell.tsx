@@ -1,25 +1,23 @@
 import { Outlet, useLocation } from 'react-router-dom'
-import { ActiveDeckSelector } from '@/components/layout/ActiveDeckSelector'
 import { AppHeader } from '@/components/layout/AppHeader'
 import { WorkspaceHeaderStrip } from '@/components/controls/WorkspaceHeaderStrip'
 
 export function AppShell() {
   const { pathname } = useLocation()
   const onAddCards = pathname === '/add-cards'
-  const onReview = pathname === '/review'
-  const showDeckPicker = onAddCards
 
-  const trailing = (
-    <>
-      {showDeckPicker ? <ActiveDeckSelector /> : null}
-      {onAddCards ? <WorkspaceHeaderStrip /> : null}
-    </>
-  )
+  const trailing = onAddCards ? (
+    <div className="hidden items-center gap-3 sm:flex">
+      <WorkspaceHeaderStrip />
+    </div>
+  ) : null
 
   return (
     <div className="flex min-h-dvh flex-col bg-white dark:bg-slate-950">
-      {!onReview ? <AppHeader trailing={trailing} /> : null}
-      <Outlet />
+      <AppHeader trailing={trailing} />
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <Outlet />
+      </div>
     </div>
   )
 }

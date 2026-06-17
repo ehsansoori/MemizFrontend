@@ -9,6 +9,7 @@ export type WordAiGenerateProps = {
   onGenerate: () => void
   busy?: boolean
   disabled?: boolean
+  fullWidth?: boolean
 }
 
 type EditableTemplateCardProps = {
@@ -28,13 +29,16 @@ const ghostTextarea =
 const blockLabelClass =
   'text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500'
 
-function AiGenerateButton({ onGenerate, busy, disabled }: WordAiGenerateProps) {
+function AiGenerateButton({ onGenerate, busy, disabled, fullWidth = true }: WordAiGenerateProps) {
   return (
     <button
       type="button"
       onClick={onGenerate}
       disabled={disabled || busy}
-      className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-accent-muted px-3 py-1.5 text-[12px] font-semibold text-accent transition active:scale-[0.98] disabled:opacity-40"
+      className={[
+        'mt-2 flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-full bg-accent-muted px-4 py-2.5 text-[13px] font-semibold text-accent transition active:scale-[0.98] disabled:opacity-40',
+        fullWidth ? 'w-full sm:w-auto' : 'w-auto',
+      ].join(' ')}
     >
       <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
         <path d="M13 2 4.5 12.5H11l-1 9.5L19.5 11H13V2z" />
@@ -130,18 +134,21 @@ function SlotListBlock({
   )
 }
 
+function isWordBlock(block: TemplateCardBlock): boolean {
+  if (block.type === 'simple' && block.patchKey === 'word') return true
+  return block.type === 'custom' && block.label.trim().toLowerCase() === 'word'
+}
+
 function CardBlock({
   block,
   draft,
   onChange,
   disabled,
-  wordAiGenerate,
 }: {
   block: TemplateCardBlock
   draft: CardDraft
   onChange: (draft: CardDraft) => void
   disabled?: boolean
-  wordAiGenerate?: WordAiGenerateProps
 }) {
   if (block.type === 'examples') {
     return (
@@ -255,8 +262,6 @@ function CardBlock({
     else onChange(patchData(draft, { notes: trimmed }))
   }
 
-  const showAi = block.patchKey === 'word' && wordAiGenerate
-
   return (
     <div className="space-y-1.5">
       <p className={blockLabelClass}>{block.label}</p>
@@ -279,13 +284,12 @@ function CardBlock({
           className={[
             ghostInput,
             block.prominent
-              ? 'font-display border-0 text-[clamp(1.35rem,5vw,1.85rem)] font-bold tracking-tight'
+              ? 'font-display border-0 text-2xl font-bold leading-tight tracking-tight sm:text-[1.85rem]'
               : '',
             block.input === 'tag' ? 'text-sm font-semibold' : '',
           ].join(' ')}
         />
       )}
-      {showAi ? <AiGenerateButton {...wordAiGenerate} /> : null}
     </div>
   )
 }
@@ -316,27 +320,46 @@ function CardFace({
   )
   if (visibleBlocks.length === 0) return null
 
+  const isFront = label === 'Front'
+  const wordBlock = isFront ? visibleBlocks.find(isWordBlock) : undefined
+  const bodyBlocks = wordBlock
+    ? visibleBlocks.filter((b) => b.id !== wordBlock.id)
+    : visibleBlocks
+
   return (
     <section
       className={[
-        'rounded-3xl border border-slate-200/90 bg-white shadow-card dark:border-slate-700/80 dark:bg-surface-900 dark:shadow-card-dark',
+        'overflow-visible rounded-3xl border border-slate-200/90 bg-white shadow-card dark:border-slate-700/80 dark:bg-surface-900 dark:shadow-card-dark',
+        isFront ? 'relative z-10' : 'relative z-0',
         muted ? 'opacity-[0.98]' : '',
       ].join(' ')}
     >
-      <div className="border-b border-slate-100 px-5 py-3 dark:border-slate-800">
+      <div className="border-b border-slate-100 px-4 py-2.5 dark:border-slate-800 sm:px-5 sm:py-3">
         <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-slate-400">
           {label}
         </p>
       </div>
-      <div className="space-y-5 px-5 py-6">
-        {visibleBlocks.map((block) => (
+      <div className="space-y-4 overflow-visible px-4 py-4 sm:space-y-5 sm:px-5 sm:py-6">
+        {wordBlock ? (
+          <div className="shrink-0 space-y-2">
+            <CardBlock
+              block={wordBlock}
+              draft={draft}
+              onChange={onChange}
+              disabled={disabled}
+            />
+            {wordAiGenerate ? <AiGenerateButton {...wordAiGenerate} /> : null}
+          </div>
+        ) : wordAiGenerate ? (
+          <AiGenerateButton {...wordAiGenerate} />
+        ) : null}
+        {bodyBlocks.map((block) => (
           <CardBlock
             key={block.id}
             block={block}
             draft={draft}
             onChange={onChange}
             disabled={disabled}
-            wordAiGenerate={wordAiGenerate}
           />
         ))}
       </div>

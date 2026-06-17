@@ -4,6 +4,10 @@ const STORAGE_KEY = 'memiz-theme'
 
 type Theme = 'light' | 'dark' | 'system'
 
+type ThemeToggleProps = {
+  compact?: boolean
+}
+
 function getSystemDark(): boolean {
   return window.matchMedia('(prefers-color-scheme: dark)').matches
 }
@@ -25,7 +29,7 @@ function resolveTheme(theme: Theme): 'light' | 'dark' {
   return theme
 }
 
-export function ThemeToggle() {
+export function ThemeToggle({ compact = false }: ThemeToggleProps) {
   const [theme, setTheme] = useState<Theme>(readStoredTheme)
 
   useLayoutEffect(() => {
@@ -63,14 +67,16 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={cycle}
-      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-surface-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-surface-800"
+      className={
+        compact
+          ? 'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[18px] transition active:bg-slate-200/80 dark:active:bg-slate-700/80'
+          : 'inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-surface-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-surface-800'
+      }
       aria-label={`Theme: ${label}. Click to cycle.`}
       title={label}
     >
-      <span className="text-base" aria-hidden>
-        {theme === 'light' ? '☀️' : theme === 'dark' ? '🌙' : '💻'}
-      </span>
-      <span className="hidden sm:inline">{label}</span>
+      <span aria-hidden>{theme === 'light' ? '☀️' : theme === 'dark' ? '🌙' : '💻'}</span>
+      {!compact ? <span className="hidden sm:inline">{label}</span> : null}
     </button>
   )
 }
