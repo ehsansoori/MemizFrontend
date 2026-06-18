@@ -36,6 +36,20 @@ function SimpleField({
         </p>
       )
     }
+    if (role === 'meaning') {
+      return (
+        <p className="mt-3 whitespace-pre-wrap text-[clamp(1.875rem,5.5vw,2.75rem)] font-semibold leading-snug text-slate-900 dark:text-white">
+          {text}
+        </p>
+      )
+    }
+    if (role === 'notes') {
+      return (
+        <p className="mt-3 whitespace-pre-wrap text-[16px] leading-relaxed text-slate-600 dark:text-slate-300">
+          {text}
+        </p>
+      )
+    }
     return (
       <p className="mt-2 whitespace-pre-wrap text-[clamp(1rem,3vw,1.15rem)] leading-relaxed text-slate-700 dark:text-slate-200">
         {text}

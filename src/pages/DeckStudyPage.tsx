@@ -76,6 +76,17 @@ export function DeckStudyPage() {
     setActionsOpen(false)
   }, [currentCard?.id])
 
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow
+    const prevOverscroll = document.body.style.overscrollBehavior
+    document.body.style.overflow = 'hidden'
+    document.body.style.overscrollBehavior = 'none'
+    return () => {
+      document.body.style.overflow = prevOverflow
+      document.body.style.overscrollBehavior = prevOverscroll
+    }
+  }, [])
+
   const syncCardParam = useCallback(
     (nextIndex: number) => {
       const card = deckCards[nextIndex]
@@ -160,10 +171,10 @@ export function DeckStudyPage() {
   const editUrl = `/decks/${deckId}/cards/${currentCard.id}/edit?from=study`
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-surface-950">
+    <div className="fixed inset-0 z-0 grid grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-white dark:bg-surface-950">
       <StudyModeHeader deckId={deckId} deckName={deck.name} />
 
-      <div className={`${studyContentWidthClass} flex min-h-0 flex-1 flex-col overflow-hidden`}>
+      <div className={`${studyContentWidthClass} min-h-0 overflow-hidden`}>
         <StudyCardNavigationShell
           canGoPrev={index > 0}
           canGoNext={index < total - 1}

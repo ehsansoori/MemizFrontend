@@ -1,5 +1,5 @@
+import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
-import { useCallback, useRef } from 'react'
 import { useMobileTouchNav } from '@/hooks/useMobileTouchNav'
 
 const SWIPE_THRESHOLD_PX = 56
@@ -38,63 +38,92 @@ export function StudyCardNavigationShell({
 }: StudyCardNavigationShellProps) {
   const touchNavEnabled = useMobileTouchNav()
   const containerRef = useRef<HTMLDivElement>(null)
-  const touchStartRef = useRef<TouchStart | null>(null)
+  const navigateRef = useRef<(direction: 'prev' | 'next') => void>(() => {})
+  const canGoPrevRef = useRef(canGoPrev)
+  const canGoNextRef = useRef(canGoNext)
+  const disabledRef = useRef(disabled)
+  const touchNavEnabledRef = useRef(touchNavEnabled)
 
-  const navigate = useCallback(
-    (direction: 'prev' | 'next') => {
-      if (direction === 'prev' && canGoPrev) onPrev()
-      if (direction === 'next' && canGoNext) onNext()
-    },
-    [canGoPrev, canGoNext, onNext, onPrev],
-  )
+  navigateRef.current = (direction: 'prev' | 'next') => {
+    if (direction === 'prev' && canGoPrev) onPrev()
+    if (direction === 'next' && canGoNext) onNext()
+  }
+  canGoPrevRef.current = canGoPrev
+  canGoNextRef.current = canGoNext
+  disabledRef.current = disabled
+  touchNavEnabledRef.current = touchNavEnabled
 
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      if (!touchNavEnabled || disabled) return
+  useEffect(() => {
+    const root = containerRef.current
+    if (!root) return
+
+    let start: TouchStart | null = null
+    let fromScroll = false
+
+    const navigate = (direction: 'prev' | 'next') => {
+      navigateRef.current(direction)
+    }
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (!touchNavEnabledRef.current || disabledRef.current) return
       const touch = e.touches[0]
       if (!touch) return
-      touchStartRef.current = { x: touch.clientX, y: touch.clientY, moved: false }
-    },
-    [disabled, touchNavEnabled],
-  )
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    const start = touchStartRef.current
-    if (!start) return
-    const touch = e.touches[0]
-    if (!touch) return
-    const dx = touch.clientX - start.x
-    const dy = touch.clientY - start.y
-    if (Math.hypot(dx, dy) > TAP_MOVE_TOLERANCE_PX) {
-      start.moved = true
+      fromScroll =
+        e.target instanceof Element && Boolean(e.target.closest('[data-study-scroll]'))
+      start = { x: touch.clientX, y: touch.clientY, moved: false }
     }
-  }, [])
 
-  const handleTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      if (!touchNavEnabled || disabled) return
-      const start = touchStartRef.current
-      touchStartRef.current = null
-      if (!start || isInteractiveTarget(e.target)) return
-
-      const touch = e.changedTouches[0]
+    const onTouchMove = (e: TouchEvent) => {
+      if (!start) return
+      const touch = e.touches[0]
       if (!touch) return
-
       const dx = touch.clientX - start.x
       const dy = touch.clientY - start.y
+      if (Math.hypot(dx, dy) > TAP_MOVE_TOLERANCE_PX) {
+        start.moved = true
+      }
+    }
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (!touchNavEnabledRef.current || disabledRef.current) {
+        start = null
+        fromScroll = false
+        return
+      }
+
+      const touchStart = start
+      start = null
+      if (!touchStart || isInteractiveTarget(e.target)) {
+        fromScroll = false
+        return
+      }
+
+      const touch = e.changedTouches[0]
+      if (!touch) {
+        fromScroll = false
+        return
+      }
+
+      const dx = touch.clientX - touchStart.x
+      const dy = touch.clientY - touchStart.y
       const absDx = Math.abs(dx)
       const absDy = Math.abs(dy)
 
       if (absDx > SWIPE_THRESHOLD_PX && absDx > absDy) {
         navigate(dx < 0 ? 'next' : 'prev')
+        fromScroll = false
         return
       }
 
-      if (start.moved || Math.hypot(dx, dy) > TAP_MOVE_TOLERANCE_PX) return
+      if (fromScroll && absDy > absDx) {
+        fromScroll = false
+        return
+      }
+      fromScroll = false
 
-      const container = containerRef.current
-      if (!container) return
-      const { left, width } = container.getBoundingClientRect()
+      if (touchStart.moved || Math.hypot(dx, dy) > TAP_MOVE_TOLERANCE_PX) return
+
+      const { left, width } = root.getBoundingClientRect()
       const relX = (touch.clientX - left) / width
 
       if (relX < SIDE_TAP_RATIO) {
@@ -102,23 +131,28 @@ export function StudyCardNavigationShell({
       } else if (relX > 1 - SIDE_TAP_RATIO) {
         navigate('next')
       }
-    },
-    [disabled, navigate, touchNavEnabled],
-  )
+    }
 
-  const handleTouchCancel = useCallback(() => {
-    touchStartRef.current = null
+    const onTouchCancel = () => {
+      start = null
+      fromScroll = false
+    }
+
+    root.addEventListener('touchstart', onTouchStart, { passive: true })
+    root.addEventListener('touchmove', onTouchMove, { passive: true })
+    root.addEventListener('touchend', onTouchEnd, { passive: true })
+    root.addEventListener('touchcancel', onTouchCancel, { passive: true })
+
+    return () => {
+      root.removeEventListener('touchstart', onTouchStart)
+      root.removeEventListener('touchmove', onTouchMove)
+      root.removeEventListener('touchend', onTouchEnd)
+      root.removeEventListener('touchcancel', onTouchCancel)
+    }
   }, [])
 
   return (
-    <div
-      ref={containerRef}
-      className="relative flex min-h-0 flex-1 flex-col"
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onTouchCancel={handleTouchCancel}
-    >
+    <div ref={containerRef} className="flex h-full min-h-0 flex-col overflow-hidden">
       {children}
     </div>
   )

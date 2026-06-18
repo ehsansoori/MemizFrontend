@@ -75,6 +75,51 @@ export function getTemplateDisplaySegments(card: SavedCard): {
   return { front, back }
 }
 
+/** All populated segments in template field order. */
+export function getOrderedTemplateDisplaySegments(card: SavedCard): TemplateDisplaySegment[] {
+  const template = resolveCardTemplate(card.templateId)
+  const values = cardDataToTemplateValues(card.data, template)
+  const segments: TemplateDisplaySegment[] = []
+
+  for (const group of getTemplateFormGroups(template.fields)) {
+    const segment = groupToSegment(group, values)
+    if (segment) segments.push(segment)
+  }
+
+  return segments
+}
+
+/**
+ * Study layout: simple fields before the first repeatable group stay fixed;
+ * repeatable groups (examples, etc.) and anything after scroll independently.
+ */
+export function splitStudyDisplaySegments(card: SavedCard): {
+  sticky: TemplateDisplaySegment[]
+  scrollable: TemplateDisplaySegment[]
+} {
+  const ordered = getOrderedTemplateDisplaySegments(card)
+  const repeatableIndex = ordered.findIndex((segment) => segment.kind === 'repeatable')
+
+  if (repeatableIndex >= 0) {
+    return {
+      sticky: ordered.slice(0, repeatableIndex),
+      scrollable: ordered.slice(repeatableIndex),
+    }
+  }
+
+  const wordIndex = ordered.findIndex(
+    (segment) => segment.kind === 'simple' && segment.role === 'word',
+  )
+  if (wordIndex >= 0 && ordered.length > wordIndex + 1) {
+    return {
+      sticky: ordered.slice(0, wordIndex + 1),
+      scrollable: ordered.slice(wordIndex + 1),
+    }
+  }
+
+  return { sticky: ordered, scrollable: [] }
+}
+
 function firstSimpleText(segments: TemplateDisplaySegment[], role?: FieldDisplayRole): string {
   for (const segment of segments) {
     if (segment.kind !== 'simple') continue

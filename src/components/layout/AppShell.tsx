@@ -15,12 +15,17 @@ export function AppShell() {
   ) : null
 
   return (
-    <div className="flex min-h-dvh flex-col bg-white dark:bg-slate-950">
+    <div
+      className={[
+        'flex flex-col bg-white dark:bg-slate-950',
+        onQuiz || onStudy ? 'h-dvh max-h-dvh overflow-hidden' : 'min-h-dvh',
+      ].join(' ')}
+    >
       {!onQuiz && !onStudy ? <AppHeader trailing={trailing} /> : null}
       <div
         className={[
           'flex min-h-0 flex-1 flex-col',
-          onQuiz || onStudy ? 'overflow-hidden' : 'overflow-y-auto',
+          onQuiz || onStudy ? 'h-full overflow-hidden' : 'overflow-y-auto',
         ].join(' ')}
       >
         <Outlet />

@@ -1,5 +1,6 @@
+import { useEffect, useRef } from 'react'
 import { TemplateOrderedFields } from '@/components/cardDisplay/TemplateOrderedFields'
-import { getTemplateDisplaySegments } from '@/domain/templateFieldDisplay'
+import { splitStudyDisplaySegments } from '@/domain/templateFieldDisplay'
 import type { SavedCard } from '@/types/cards'
 
 type StudyCardViewProps = {
@@ -9,14 +10,21 @@ type StudyCardViewProps = {
 }
 
 export function StudyCardView({ card, menuDisabled, onMenu }: StudyCardViewProps) {
-  const { front, back } = getTemplateDisplaySegments(card)
+  const { sticky, scrollable } = splitStudyDisplaySegments(card)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || scrollable.length === 0) return
+    el.scrollTop = 0
+  }, [card.id, scrollable.length])
 
   return (
-    <article className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <article className="flex h-full min-h-0 flex-col overflow-hidden">
       <header className="shrink-0 border-b border-slate-100 bg-white pb-3 pt-0.5 dark:border-slate-800/80 dark:bg-surface-950">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <TemplateOrderedFields segments={front} variant="study-header" />
+            <TemplateOrderedFields segments={sticky} variant="study-header" />
           </div>
           <button
             type="button"
@@ -34,9 +42,17 @@ export function StudyCardView({ card, menuDisabled, onMenu }: StudyCardViewProps
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 pt-4 scrollbar-minimal sm:pt-5">
-        <TemplateOrderedFields segments={back} variant="study-body" />
-      </div>
+      {scrollable.length > 0 ? (
+        <div
+          ref={scrollRef}
+          data-study-scroll
+          className="study-scroll-panel scrollbar-minimal min-h-0 flex-1 overflow-y-auto pb-4 pt-4 sm:pt-5"
+        >
+          <TemplateOrderedFields segments={scrollable} variant="study-body" />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1" aria-hidden />
+      )}
     </article>
   )
 }
