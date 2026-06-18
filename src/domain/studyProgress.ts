@@ -7,7 +7,10 @@ export function normalizeStudyProgress(
   savedAt: string,
 ): StudyProgress {
   if (study?.status && study.dueAt) {
-    return study
+    return {
+      ...study,
+      reviewCount: study.reviewCount ?? 0,
+    }
   }
   const base = createDefaultStudyProgress()
   return {
@@ -15,5 +18,6 @@ export function normalizeStudyProgress(
     dueAt: study?.dueAt ?? savedAt,
     stage: study?.stage ?? base.stage,
     status: study?.status ?? base.status,
+    reviewCount: study?.reviewCount ?? 0,
   }
 }

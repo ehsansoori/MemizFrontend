@@ -17,6 +17,8 @@ export function applyReviewRating(
   const stage =
     study.status === 'new' ? STUDY_STAGE_MIN : Math.max(STUDY_STAGE_MIN, study.stage)
 
+  const reviewed = (study.reviewCount ?? 0) + 1
+
   switch (rating) {
     case 'again':
       return {
@@ -24,6 +26,7 @@ export function applyReviewRating(
         stage: STUDY_STAGE_MIN,
         dueAt: addDays(now, 0),
         lastReviewedAt: now,
+        reviewCount: reviewed,
       }
     case 'hard':
       return {
@@ -31,6 +34,7 @@ export function applyReviewRating(
         stage,
         dueAt: addDays(now, 1),
         lastReviewedAt: now,
+        reviewCount: reviewed,
       }
     case 'good': {
       const nextStage = Math.min(STUDY_STAGE_MAX, stage + 1)
@@ -39,6 +43,7 @@ export function applyReviewRating(
         stage: nextStage,
         dueAt: addDays(now, nextStage * 2),
         lastReviewedAt: now,
+        reviewCount: reviewed,
       }
     }
     case 'easy': {
@@ -48,6 +53,7 @@ export function applyReviewRating(
         stage: nextStage,
         dueAt: addDays(now, nextStage * 4),
         lastReviewedAt: now,
+        reviewCount: reviewed,
       }
     }
   }

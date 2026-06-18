@@ -12,5 +12,6 @@ export function createDefaultStudyProgress(): StudyProgress {
     stage: 1,
     dueAt: t,
     lastReviewedAt: undefined,
+    reviewCount: 0,
   }
 }

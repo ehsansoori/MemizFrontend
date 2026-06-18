@@ -21,6 +21,7 @@ export type StudyCardDisplay = {
   phonetic?: string
   partOfSpeech?: string
   examples: { text: string; translation?: string }[]
+  notes?: string
 }
 
 function formatStudyPhonetic(phonetic: string): string {
@@ -67,7 +68,12 @@ export function getStudyCardDisplay(card: SavedCard): StudyCardDisplay {
     phonetic: phonetic ? formatStudyPhonetic(phonetic) : undefined,
     partOfSpeech,
     examples: card.data.examples,
+    notes: card.data.notes?.trim() || undefined,
   }
+}
+
+export function cardReviewCount(card: SavedCard): number {
+  return card.study.reviewCount ?? 0
 }
 
 export function studyCardMetadataLine(display: StudyCardDisplay): string {

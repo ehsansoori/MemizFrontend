@@ -17,6 +17,8 @@ export interface StudyProgress {
   /** ISO timestamp — card is due when now >= dueAt. */
   dueAt: string
   lastReviewedAt?: string
+  /** Total quiz reviews completed for this card. */
+  reviewCount: number
 }
 
 export const STUDY_STAGE_MIN = 1
