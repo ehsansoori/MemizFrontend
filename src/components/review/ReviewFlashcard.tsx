@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { ReviewAnswerDetails } from '@/components/review/ReviewAnswerDetails'
+import { savedCardWord } from '@/domain/templateFieldDisplay'
 import type { SavedCard } from '@/types/cards'
 
 type ReviewFlashcardProps = {
@@ -18,7 +19,7 @@ export function ReviewFlashcard({ card, showAnswer, footer }: ReviewFlashcardPro
               Question
             </p>
             <h2 className="mt-2 font-display text-[clamp(1.5rem,6vw,2.25rem)] font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
-              {card.data.word}
+              {savedCardWord(card)}
             </h2>
           </div>
 
@@ -46,7 +47,7 @@ export function ReviewFlashcard({ card, showAnswer, footer }: ReviewFlashcardPro
             Question
           </p>
           <h2 className="font-display mt-4 text-[clamp(2rem,8vw,3rem)] font-bold leading-tight tracking-tight text-slate-900 dark:text-white">
-            {card.data.word}
+            {savedCardWord(card)}
           </h2>
         </div>
       </div>

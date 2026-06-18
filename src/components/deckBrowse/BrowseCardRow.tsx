@@ -1,5 +1,5 @@
 import { CARD_STATUS_LABELS } from '@/domain/cardStudyDisplay'
-import { savedCardMeaningPreview, savedCardWord } from '@/domain/cardFaceText'
+import { savedCardMeaningPreview, savedCardWord } from '@/domain/templateFieldDisplay'
 import type { SavedCard } from '@/types/cards'
 import type { CardReviewStatus } from '@/types/study'
 

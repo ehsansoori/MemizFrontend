@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { StudyCardNavigationShell } from '@/components/deckStudy/StudyCardNavigationShell'
 import { StudyCardActionsSheet } from '@/components/deckStudy/StudyCardActionsSheet'
 import { StudyCardNavigatorModal } from '@/components/deckStudy/StudyCardNavigatorModal'
 import { StudyCardView } from '@/components/deckStudy/StudyCardView'
 import { StudyBottomToolbar } from '@/components/deckStudy/StudyBottomToolbar'
 import { StudyModeHeader, studyContentWidthClass } from '@/components/deckStudy/StudyModeHeader'
-import { savedCardWord } from '@/domain/cardFaceText'
+import { savedCardWord } from '@/domain/templateFieldDisplay'
 import { sortDeckCardsAlphabetically } from '@/domain/deckCardList'
 import { useToast } from '@/providers/toastContext'
 import { storage } from '@/storage/adapter'
@@ -162,13 +163,21 @@ export function DeckStudyPage() {
     <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-surface-950">
       <StudyModeHeader deckId={deckId} deckName={deck.name} />
 
-      <div className={`${studyContentWidthClass} flex min-h-0 flex-1 flex-col`}>
-        <StudyCardView
-          key={currentCard.id}
-          card={currentCard}
-          menuDisabled={busy}
-          onMenu={() => setActionsOpen(true)}
-        />
+      <div className={`${studyContentWidthClass} flex min-h-0 flex-1 flex-col overflow-hidden`}>
+        <StudyCardNavigationShell
+          canGoPrev={index > 0}
+          canGoNext={index < total - 1}
+          onPrev={() => goToIndex(index - 1)}
+          onNext={() => goToIndex(index + 1)}
+          disabled={busy || navigatorOpen || actionsOpen}
+        >
+          <StudyCardView
+            key={currentCard.id}
+            card={currentCard}
+            menuDisabled={busy}
+            onMenu={() => setActionsOpen(true)}
+          />
+        </StudyCardNavigationShell>
       </div>
 
       <StudyBottomToolbar

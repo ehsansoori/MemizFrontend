@@ -3,7 +3,7 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { BrowseCardActionsSheet } from '@/components/deckBrowse/BrowseCardActionsSheet'
 import { BrowseCardRow } from '@/components/deckBrowse/BrowseCardRow'
 import { DeckCardFilterBar } from '@/components/deckBrowse/DeckCardFilterBar'
-import { savedCardWord } from '@/domain/cardFaceText'
+import { savedCardWord } from '@/domain/templateFieldDisplay'
 import {
   countDeckCardsByStatus,
   filterDeckCardsForBrowse,
