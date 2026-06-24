@@ -1,66 +1,117 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BottomSheet } from '@/components/decks/BottomSheet'
 import { FieldConfigSheet } from '@/components/addCards/FieldConfigSheet'
 import { TemplateLayoutEditor } from '@/components/addCards/TemplateLayoutEditor'
 import {
+  cloneTemplateFields,
+  snapshotTemplateBuilder,
+  templateBuilderSnapshotsEqual,
+  type TemplateBuilderSnapshot,
+} from '@/domain/templateBuilderSnapshot'
+import {
   BUILDER_PRESETS,
   createDefaultBuilderFields,
   appendFieldToSide,
+  availablePresetsForSide,
+  canAddPresetToSide,
   createPresetField,
   type BuilderPresetId,
 } from '@/domain/templateBuilderPresets'
+import { validateTemplateFields } from '@/domain/templateValidation'
 import type { TemplateFieldDef, TemplateFieldSide, CardTemplate } from '@/types/deckProfile'
+import { useToast } from '@/providers/toastContext'
 
 type TemplateBuilderSheetProps = {
   open: boolean
   busy?: boolean
   mode?: 'create' | 'edit'
   initialTemplate?: CardTemplate | null
+  lockTemplateName?: boolean
+  showResetToDefault?: boolean
   onClose: () => void
   onSave: (name: string, fields: TemplateFieldDef[], templateId?: string) => void
+  onResetToDefault?: () => void
 }
 
 const inputClass =
   'h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-[14px] outline-none focus:border-accent dark:border-slate-700 dark:bg-slate-800/60'
+
+const outlineButtonClass =
+  'h-12 flex-1 rounded-2xl border border-slate-200 text-[15px] font-semibold text-slate-700 transition active:scale-[0.98] disabled:opacity-40 dark:border-slate-700 dark:text-slate-200'
+
+const primaryButtonClass =
+  'h-12 flex-1 rounded-2xl bg-accent text-[15px] font-semibold text-white transition active:scale-[0.98] disabled:opacity-40'
+
+function createInitialSnapshot(
+  mode: 'create' | 'edit',
+  initialTemplate?: CardTemplate | null,
+): TemplateBuilderSnapshot {
+  if (mode === 'edit' && initialTemplate) {
+    return snapshotTemplateBuilder(initialTemplate.name, initialTemplate.fields)
+  }
+  return snapshotTemplateBuilder('', createDefaultBuilderFields())
+}
 
 export function TemplateBuilderSheet({
   open,
   busy,
   mode = 'create',
   initialTemplate,
+  lockTemplateName = false,
+  showResetToDefault = false,
   onClose,
   onSave,
+  onResetToDefault,
 }: TemplateBuilderSheetProps) {
+  const { showToast } = useToast()
   const [name, setName] = useState('')
   const [fields, setFields] = useState<TemplateFieldDef[]>(createDefaultBuilderFields)
+  const [savedSnapshot, setSavedSnapshot] = useState<TemplateBuilderSnapshot>(() =>
+    createInitialSnapshot(mode, initialTemplate),
+  )
   const [configFieldId, setConfigFieldId] = useState<string | null>(null)
-  const [addPreset, setAddPreset] = useState<BuilderPresetId>('word')
+  const [addPreset, setAddPreset] = useState<BuilderPresetId>('input')
   const [activeSide, setActiveSide] = useState<TemplateFieldSide>('front')
+  const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [dismissLock, setDismissLock] = useState(false)
   const dismissLockTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (open) {
-      if (mode === 'edit' && initialTemplate) {
-        setName(initialTemplate.name)
-        setFields(initialTemplate.fields.map((f) => ({ ...f })))
-      } else {
-        setName('')
-        setFields(createDefaultBuilderFields())
-      }
+      const snapshot = createInitialSnapshot(mode, initialTemplate)
+      setSavedSnapshot(snapshot)
+      setName(snapshot.name)
+      setFields(cloneTemplateFields(snapshot.fields))
       setActiveSide('front')
       setConfigFieldId(null)
-      setAddPreset('word')
+      setAddPreset('input')
+      setValidationErrors([])
     } else {
       setConfigFieldId(null)
     }
   }, [open, mode, initialTemplate])
 
   useEffect(() => {
+    if (!canAddPresetToSide(fields, activeSide, addPreset)) {
+      const next = availablePresetsForSide(fields, activeSide)[0]
+      if (next) setAddPreset(next)
+    }
+  }, [fields, activeSide, addPreset])
+
+  useEffect(() => {
     return () => {
       if (dismissLockTimer.current) clearTimeout(dismissLockTimer.current)
     }
   }, [])
+
+  const effectiveName =
+    lockTemplateName && initialTemplate ? initialTemplate.name.trim() : name.trim()
+
+  const isDirty = useMemo(() => {
+    if (!open) return false
+    const current = snapshotTemplateBuilder(effectiveName, fields)
+    return !templateBuilderSnapshotsEqual(current, savedSnapshot)
+  }, [open, effectiveName, fields, savedSnapshot])
 
   const configField = configFieldId ? fields.find((f) => f.id === configFieldId) ?? null : null
 
@@ -72,26 +123,50 @@ export function TemplateBuilderSheet({
   }
 
   const addField = () => {
+    if (!canAddPresetToSide(fields, activeSide, addPreset)) return
     const field = createPresetField(addPreset, activeSide)
     if (!field) return
     setFields((list) => appendFieldToSide(list, field, activeSide))
-    if (addPreset === 'custom' || addPreset === 'definition' || addPreset === 'examples') {
+    if (addPreset === 'examples' || addPreset === 'pronunciations') {
       setConfigFieldId(field.id)
     }
   }
 
-  const submit = () => {
-    const trimmed = name.trim()
-    if (!trimmed || fields.length === 0) return
-    onSave(trimmed, fields, mode === 'edit' ? initialTemplate?.id : undefined)
-    setName('')
-    setFields(createDefaultBuilderFields())
+  const canAddCurrentPreset = canAddPresetToSide(fields, activeSide, addPreset)
+  const nestedPanelOpen = configFieldId !== null
+  const title = mode === 'edit' ? 'Edit Template' : 'Create Template'
+
+  const canSave =
+    isDirty &&
+    fields.length > 0 &&
+    effectiveName.length > 0 &&
+    !busy &&
+    !nestedPanelOpen
+
+  const discardChanges = () => {
+    setName(savedSnapshot.name)
+    setFields(cloneTemplateFields(savedSnapshot.fields))
+    setValidationErrors([])
     setConfigFieldId(null)
     setActiveSide('front')
   }
 
-  const nestedPanelOpen = configFieldId !== null
-  const title = mode === 'edit' ? 'Edit Template' : 'Create Template'
+  const submit = () => {
+    if (!isDirty) return
+
+    const trimmed = effectiveName
+    const validation = validateTemplateFields(fields)
+    if (!validation.valid) {
+      setValidationErrors(validation.errors)
+      showToast(validation.errors[0] ?? 'Fix template errors before saving.', 'error')
+      return
+    }
+    if (!trimmed) return
+
+    setValidationErrors([])
+    onSave(trimmed, fields, mode === 'edit' ? initialTemplate?.id : undefined)
+    setSavedSnapshot(snapshotTemplateBuilder(trimmed, fields))
+  }
 
   return (
     <>
@@ -108,10 +183,11 @@ export function TemplateBuilderSheet({
         <div className="max-h-[80dvh] space-y-4 overflow-y-auto px-5 pb-5 scrollbar-minimal">
           <input
             type="text"
-            value={name}
+            value={lockTemplateName && initialTemplate ? initialTemplate.name : name}
             onChange={(e) => setName(e.target.value)}
+            readOnly={lockTemplateName}
             placeholder="Template name"
-            className={inputClass}
+            className={[inputClass, lockTemplateName ? 'opacity-70' : ''].join(' ')}
           />
 
           <TemplateLayoutEditor
@@ -142,16 +218,20 @@ export function TemplateBuilderSheet({
                 disabled={nestedPanelOpen}
                 className={`${inputClass} min-w-0 flex-1 disabled:opacity-50`}
               >
-                {BUILDER_PRESETS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
+                {BUILDER_PRESETS.map((p) => {
+                  const used = !canAddPresetToSide(fields, activeSide, p.id)
+                  return (
+                    <option key={p.id} value={p.id} disabled={used}>
+                      {p.label}
+                      {used ? ' (already used)' : ''}
+                    </option>
+                  )
+                })}
               </select>
               <button
                 type="button"
                 onClick={addField}
-                disabled={nestedPanelOpen}
+                disabled={nestedPanelOpen || !canAddCurrentPreset}
                 className="h-11 shrink-0 rounded-xl bg-accent px-4 text-[13px] font-semibold text-white disabled:opacity-50"
               >
                 + Add
@@ -159,14 +239,57 @@ export function TemplateBuilderSheet({
             </div>
           </div>
 
-          <button
-            type="button"
-            disabled={busy || !name.trim() || fields.length === 0}
-            onClick={submit}
-            className="h-12 w-full rounded-2xl bg-accent text-[15px] font-semibold text-white disabled:opacity-40"
-          >
-            Save Template
-          </button>
+          {validationErrors.length > 0 ? (
+            <div
+              className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2.5 dark:border-red-900/40 dark:bg-red-950/20"
+              role="alert"
+            >
+              {validationErrors.map((error) => (
+                <p key={error} className="text-[13px] leading-relaxed text-red-700 dark:text-red-300">
+                  {error}
+                </p>
+              ))}
+            </div>
+          ) : null}
+
+          {showResetToDefault && onResetToDefault ? (
+            <button
+              type="button"
+              disabled={busy || nestedPanelOpen}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    'Reset this template to the original built-in layout? Your custom changes will be lost.',
+                  )
+                ) {
+                  return
+                }
+                onResetToDefault()
+              }}
+              className="h-11 w-full rounded-2xl border border-slate-200 text-[14px] font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"
+            >
+              Reset to Default
+            </button>
+          ) : null}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              disabled={!isDirty || busy || nestedPanelOpen}
+              onClick={discardChanges}
+              className={outlineButtonClass}
+            >
+              Discard Changes
+            </button>
+            <button
+              type="button"
+              disabled={!canSave}
+              onClick={submit}
+              className={primaryButtonClass}
+            >
+              Save Template
+            </button>
+          </div>
         </div>
       </BottomSheet>
 

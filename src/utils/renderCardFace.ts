@@ -1,15 +1,18 @@
 import type { CardFieldKey, CardFieldLayout, GeneratedCardData } from '@/types/cards'
+import {
+  cardInput,
+  exampleSentence,
+  exampleTranslation,
+} from '@/domain/languageCardData'
+import { formatPronunciationsForDisplay } from '@/domain/pronunciations'
 import { fieldTypesInOrder } from '@/utils/cardLayoutModel'
 
 const LABELS: Record<CardFieldKey, string> = {
-  word: 'Word',
-  phonetic: 'Phonetic',
+  input: 'Input',
+  translation: 'Translation',
+  pronunciations: 'Pronunciations',
   partOfSpeech: 'Part of speech',
-  targetMeaning: 'Target meaning',
-  englishMeaning: 'English meaning',
   examples: 'Examples',
-  exampleTranslations: 'Example translations',
-  notes: 'Notes',
 }
 
 /** Plain-text lines for one card field (search, export). */
@@ -18,30 +21,24 @@ export function linesForField(
   field: CardFieldKey,
 ): string[] {
   switch (field) {
-    case 'word':
-      return data.word ? [data.word] : []
-    case 'phonetic':
-      return data.phonetic ? [data.phonetic] : []
+    case 'input':
+      return cardInput(data) ? [cardInput(data)] : []
+    case 'translation':
+      return data.translation?.trim() ? [data.translation.trim()] : []
+    case 'pronunciations':
+      return data.pronunciations?.length ? formatPronunciationsForDisplay(data.pronunciations).split('\n') : []
     case 'partOfSpeech':
-      return data.partOfSpeech ? [data.partOfSpeech] : []
-    case 'targetMeaning':
-      return data.targetMeaning ? [data.targetMeaning] : []
-    case 'englishMeaning':
-      return data.englishMeaning ? [data.englishMeaning] : []
+      return data.partOfSpeech?.length ? [data.partOfSpeech.join(' · ')] : []
     case 'examples':
       return data.examples.length
-        ? data.examples.map((e, i) => `${i + 1}. ${e.text}`)
-        : []
-    case 'exampleTranslations':
-      return data.examples.length
         ? data.examples
-            .map((e, i) =>
-              e.translation ? `${i + 1}. ${e.translation}` : '',
-            )
+            .map((e, i) => {
+              const sentence = exampleSentence(e)
+              const tr = exampleTranslation(e)
+              return tr ? `${i + 1}. ${sentence}\n${tr}` : `${i + 1}. ${sentence}`
+            })
             .filter(Boolean)
         : []
-    case 'notes':
-      return data.notes?.trim() ? [data.notes.trim()] : []
     default:
       return []
   }
@@ -69,7 +66,7 @@ export function fieldLabel(field: CardFieldKey): string {
 const LABEL_VALUES = new Set(Object.values(LABELS))
 
 /**
- * Review/study display: drop field captions (e.g. "Word") and keep values only.
+ * Review/study display: drop field captions (e.g. "Input") and keep values only.
  */
 export function cardFaceDisplayText(raw: string): string {
   const trimmed = raw.trim()

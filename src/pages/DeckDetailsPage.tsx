@@ -1,10 +1,22 @@
 import { useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { DeckConfigurationSheet } from '@/components/decks/DeckConfigurationSheet'
+import { TemplateBuilderSheet } from '@/components/addCards/TemplateBuilderSheet'
 import { DeckAddCardsSheet } from '@/components/deckDetails/DeckAddCardsSheet'
 import { getDeckType } from '@/domain/deckTypes'
-import { resolveDeckDefaultTemplate } from '@/domain/resolveDeckTemplate'
+import { deckHasOtherCardsUsingTemplate } from '@/domain/deckTemplateUsage'
+import {
+  resolveCardTemplate,
+  resolveDeckDefaultTemplate,
+  resolveDeckDefaultTemplateId,
+  templatesReferToSameTemplate,
+} from '@/domain/resolveDeckTemplate'
+import { isLanguageDefaultTemplate } from '@/domain/cardTemplates'
+import { resetTemplateToDefault, saveTemplateFromBuilder } from '@/domain/templatePersistence'
 import { countByQueue } from '@/domain/reviewQueue'
+import { useDeckTemplateChangeFlow } from '@/hooks/decks/useDeckTemplateChangeFlow'
 import { useToast } from '@/providers/toastContext'
+import { customTemplateRepository } from '@/storage/customTemplateRepository'
 import { useLibraryStore } from '@/store/library/libraryStore'
 
 function StatPill({ label, value }: { label: string; value: number }) {
@@ -29,8 +41,12 @@ export function DeckDetailsPage() {
   const allCards = useLibraryStore((s) => s.cards)
   const hydrated = useLibraryStore((s) => s.hydrated)
   const setActiveDeckId = useLibraryStore((s) => s.setActiveDeckId)
-
   const [addSheetOpen, setAddSheetOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [templateBuilderOpen, setTemplateBuilderOpen] = useState(false)
+  const [templateBuilderMode, setTemplateBuilderMode] = useState<'create' | 'edit'>('create')
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
+  const [templatesRefreshKey, setTemplatesRefreshKey] = useState(0)
 
   const deck = useMemo(
     () => (deckId ? decks.find((d) => d.id === deckId) : undefined),
@@ -38,11 +54,20 @@ export function DeckDetailsPage() {
   )
   const deckTypeLabel = getDeckType(deck?.deckTypeId).label
   const templateName = resolveDeckDefaultTemplate(deck).name
+  const editingTemplate = useMemo(
+    () => (editingTemplateId ? resolveCardTemplate(editingTemplateId) : null),
+    [editingTemplateId, templatesRefreshKey],
+  )
 
   const deckCards = useMemo(
     () => (deckId ? allCards.filter((c) => c.deckId === deckId) : []),
     [allCards, deckId],
   )
+
+  const { busy: templateChangeBusy, requestTemplateChange, flowUi } =
+    useDeckTemplateChangeFlow(deck, deckCards)
+
+  const combinedBusy = templateChangeBusy
 
   const queueCounts = useMemo(() => countByQueue(deckCards), [deckCards])
   const total = deckCards.length
@@ -81,6 +106,105 @@ export function DeckDetailsPage() {
     showToast('Import cards is coming soon.', 'error')
   }
 
+  const saveDeckConfiguration = async ({
+    defaultTemplateId,
+    languageSettings,
+  }: {
+    defaultTemplateId: string
+    languageSettings?: import('@/types/deckProfile').LanguageDeckSettings
+  }) => {
+    if (!deck) return
+    await requestTemplateChange({
+      newTemplateId: defaultTemplateId,
+      languageSettings,
+      onProcessingStart: () => setSettingsOpen(false),
+      onComplete: () => setSettingsOpen(false),
+    })
+  }
+
+  const handleTemplateSaved = (
+    name: string,
+    fields: Parameters<typeof saveTemplateFromBuilder>[1],
+    templateId?: string,
+  ) => {
+    if (!deck) return
+    const effectiveId = (templateId ?? editingTemplateId ?? '').trim()
+    const deckDefaultId = resolveDeckDefaultTemplateId(deck)
+
+    const finishBuilder = () => {
+      setTemplateBuilderOpen(false)
+      setEditingTemplateId(null)
+      setTemplateBuilderMode('create')
+      showToast(`Template “${name}” saved.`, 'success')
+    }
+
+    const affectsDeckCards =
+      effectiveId &&
+      (templatesReferToSameTemplate(effectiveId, deckDefaultId) ||
+        deckHasOtherCardsUsingTemplate(deckCards, deck.id, effectiveId))
+
+    if (affectsDeckCards) {
+      void requestTemplateChange({
+        newTemplateId: effectiveId,
+        mode: 'update',
+        applyTemplateSave: async () => {
+          saveTemplateFromBuilder(name, fields, effectiveId)
+          setTemplatesRefreshKey((k) => k + 1)
+        },
+        onProcessingStart: () => setTemplateBuilderOpen(false),
+        onComplete: finishBuilder,
+      })
+      return
+    }
+
+    saveTemplateFromBuilder(name, fields, effectiveId || templateId)
+    setTemplatesRefreshKey((k) => k + 1)
+    finishBuilder()
+  }
+
+  const handleResetLanguageDefault = () => {
+    if (!deck || !editingTemplateId) return
+    const deckDefaultId = resolveDeckDefaultTemplateId(deck)
+
+    const finishBuilder = () => {
+      setTemplateBuilderOpen(false)
+      setEditingTemplateId(null)
+      setTemplateBuilderMode('create')
+      showToast('Basic Language Template reset.', 'success')
+    }
+
+    const affectsDeckCards =
+      templatesReferToSameTemplate(editingTemplateId, deckDefaultId) ||
+      deckHasOtherCardsUsingTemplate(deckCards, deck.id, editingTemplateId)
+
+    if (affectsDeckCards) {
+      void requestTemplateChange({
+        newTemplateId: editingTemplateId,
+        mode: 'update',
+        applyTemplateSave: async () => {
+          resetTemplateToDefault(editingTemplateId)
+          setTemplatesRefreshKey((k) => k + 1)
+        },
+        onProcessingStart: () => setTemplateBuilderOpen(false),
+        onComplete: finishBuilder,
+      })
+      return
+    }
+
+    resetTemplateToDefault(editingTemplateId)
+    setTemplatesRefreshKey((k) => k + 1)
+    finishBuilder()
+  }
+
+  const handleDeleteTemplate = (templateId: string) => {
+    const template = resolveCardTemplate(templateId)
+    if (template.isBuiltin) return
+    if (!window.confirm(`Delete template “${template.name}”?`)) return
+    customTemplateRepository.delete(templateId)
+    setTemplatesRefreshKey((k) => k + 1)
+    showToast(`Template “${template.name}” deleted.`, 'success')
+  }
+
   if (!deck) {
     return (
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
@@ -116,6 +240,13 @@ export function DeckDetailsPage() {
         <p className="mt-1 text-[13px] text-slate-500 dark:text-slate-400">
           {deckTypeLabel} · Default: {templateName}
         </p>
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          className="mt-2 text-[13px] font-medium text-accent"
+        >
+          Deck settings
+        </button>
       </div>
 
       <section className="mb-6 rounded-3xl border border-slate-200/80 bg-white p-5 shadow-card dark:border-slate-700/70 dark:bg-surface-900 dark:shadow-card-dark">
@@ -228,11 +359,55 @@ export function DeckDetailsPage() {
 
       <DeckAddCardsSheet
         open={addSheetOpen}
-        busy={false}
+        busy={combinedBusy}
         onClose={() => setAddSheetOpen(false)}
         onAddCards={() => void openAddCards()}
         onImport={handleImport}
       />
+
+      <DeckConfigurationSheet
+        open={settingsOpen}
+        busy={combinedBusy}
+        deck={deck}
+        templatesRefreshKey={templatesRefreshKey}
+        onClose={() => setSettingsOpen(false)}
+        onSave={(params) => void saveDeckConfiguration(params)}
+        onCreateTemplate={() => {
+          setSettingsOpen(false)
+          setTemplateBuilderMode('create')
+          setEditingTemplateId(null)
+          setTemplateBuilderOpen(true)
+        }}
+        onEditTemplate={(templateId) => {
+          setSettingsOpen(false)
+          setTemplateBuilderMode('edit')
+          setEditingTemplateId(templateId)
+          setTemplateBuilderOpen(true)
+        }}
+        onDeleteTemplate={handleDeleteTemplate}
+      />
+
+      <TemplateBuilderSheet
+        open={templateBuilderOpen}
+        busy={combinedBusy}
+        mode={templateBuilderMode}
+        initialTemplate={templateBuilderMode === 'edit' ? editingTemplate : null}
+        lockTemplateName={
+          templateBuilderMode === 'edit' && isLanguageDefaultTemplate(editingTemplateId ?? '')
+        }
+        showResetToDefault={
+          templateBuilderMode === 'edit' && isLanguageDefaultTemplate(editingTemplateId ?? '')
+        }
+        onResetToDefault={handleResetLanguageDefault}
+        onClose={() => {
+          setTemplateBuilderOpen(false)
+          setEditingTemplateId(null)
+          setTemplateBuilderMode('create')
+        }}
+        onSave={handleTemplateSaved}
+      />
+
+      {flowUi}
     </main>
   )
 }

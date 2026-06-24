@@ -7,6 +7,7 @@ export type DeckTypeDefinition = {
   supportsLanguageSettings: boolean
 }
 
+/** MVP: Language Learning only in create-deck flow. */
 export const DECK_TYPES: DeckTypeDefinition[] = [
   {
     id: 'language_learning',
@@ -14,48 +15,15 @@ export const DECK_TYPES: DeckTypeDefinition[] = [
     description: 'Vocabulary, phrases, and pronunciation.',
     supportsLanguageSettings: true,
   },
-  {
-    id: 'it_certification',
-    label: 'IT Certification',
-    description: 'CompTIA, AWS, and technical exams.',
-    supportsLanguageSettings: false,
-  },
-  {
-    id: 'medical',
-    label: 'Medical',
-    description: 'Terms, symptoms, and treatments.',
-    supportsLanguageSettings: false,
-  },
-  {
-    id: 'history',
-    label: 'History',
-    description: 'Events, dates, and figures.',
-    supportsLanguageSettings: false,
-  },
-  {
-    id: 'geography',
-    label: 'Geography',
-    description: 'Places, capitals, and maps.',
-    supportsLanguageSettings: false,
-  },
-  {
-    id: 'law',
-    label: 'Law',
-    description: 'Cases, statutes, and definitions.',
-    supportsLanguageSettings: false,
-  },
-  {
-    id: 'custom',
-    label: 'Custom',
-    description: 'Any subject with your own template.',
-    supportsLanguageSettings: false,
-  },
 ]
 
-export const DEFAULT_DECK_TYPE_ID: DeckTypeId = 'custom'
+export const DEFAULT_DECK_TYPE_ID: DeckTypeId = 'language_learning'
 
 export function getDeckType(id: DeckTypeId | undefined): DeckTypeDefinition {
-  return DECK_TYPES.find((t) => t.id === id) ?? DECK_TYPES.find((t) => t.id === 'custom')!
+  return (
+    DECK_TYPES.find((t) => t.id === id) ??
+    DECK_TYPES[0]
+  )
 }
 
 export function deckTypeSupportsLanguageSettings(id: DeckTypeId | undefined): boolean {

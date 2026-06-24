@@ -1,4 +1,5 @@
 import { filterAndRankCardsBySearch } from '@/domain/cardSearch'
+import { cardInput } from '@/domain/languageCardData'
 import type { SavedCard } from '@/types/cards'
 
 export type DeckCardStatusFilter = 'all' | 'new' | 'learning' | 'mastered'
@@ -12,7 +13,7 @@ export const DECK_CARD_STATUS_FILTERS: { id: DeckCardStatusFilter; label: string
 
 export function sortDeckCardsAlphabetically(cards: SavedCard[]): SavedCard[] {
   return [...cards].sort((a, b) =>
-    a.data.word.localeCompare(b.data.word, undefined, { sensitivity: 'base' }),
+    cardInput(a.data).localeCompare(cardInput(b.data), undefined, { sensitivity: 'base' }),
   )
 }
 

@@ -6,6 +6,7 @@ import { StudyCardNavigatorModal } from '@/components/deckStudy/StudyCardNavigat
 import { StudyCardView } from '@/components/deckStudy/StudyCardView'
 import { StudyBottomToolbar } from '@/components/deckStudy/StudyBottomToolbar'
 import { StudyModeHeader, studyContentWidthClass } from '@/components/deckStudy/StudyModeHeader'
+import { buildEditCardPath } from '@/domain/editCardNavigation'
 import { savedCardWord } from '@/domain/templateFieldDisplay'
 import { sortDeckCardsAlphabetically } from '@/domain/deckCardList'
 import { useToast } from '@/providers/toastContext'
@@ -52,11 +53,21 @@ export function DeckStudyPage() {
   }, [allCards, deckId])
 
   const cardIdParam = searchParams.get('card')
+  const atIndexParam = searchParams.get('atIndex')
 
   useEffect(() => {
     if (deckCards.length === 0) {
       setIndex(0)
       return
+    }
+    if (atIndexParam !== null) {
+      const targetIndex = Number.parseInt(atIndexParam, 10)
+      if (Number.isFinite(targetIndex)) {
+        const idx = Math.max(0, Math.min(targetIndex, deckCards.length - 1))
+        setIndex(idx)
+        setSearchParams({ card: deckCards[idx].id }, { replace: true })
+        return
+      }
     }
     if (cardIdParam) {
       const idx = deckCards.findIndex((c) => c.id === cardIdParam)
@@ -64,9 +75,11 @@ export function DeckStudyPage() {
         setIndex(idx)
         return
       }
+      setIndex((prev) => Math.min(prev, deckCards.length - 1))
+      return
     }
     setIndex((prev) => Math.min(prev, deckCards.length - 1))
-  }, [deckCards, cardIdParam])
+  }, [deckCards, cardIdParam, atIndexParam, setSearchParams])
 
   const currentCard = deckCards[index]
   const total = deckCards.length
@@ -139,7 +152,7 @@ export function DeckStudyPage() {
 
   const handleDeleteCard = async () => {
     if (!currentCard || !deckId) return
-    if (!window.confirm(`Delete “${currentCard.data.word}”?`)) return
+    if (!window.confirm(`Delete “${savedCardWord(currentCard)}”?`)) return
     setBusy(true)
     try {
       const remaining = deckCards.filter((c) => c.id !== currentCard.id)
@@ -168,7 +181,11 @@ export function DeckStudyPage() {
     )
   }
 
-  const editUrl = `/decks/${deckId}/cards/${currentCard.id}/edit?from=study`
+  const editUrl = buildEditCardPath(deckId, currentCard.id, {
+    sourcePage: 'study',
+    sourceDeckId: deckId,
+    sourceSessionState: { cardId: currentCard.id, cardIndex: index },
+  })
 
   return (
     <div className="fixed inset-0 z-0 grid grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-white dark:bg-surface-950">

@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { BrowseCardActionsSheet } from '@/components/deckBrowse/BrowseCardActionsSheet'
 import { BrowseCardRow } from '@/components/deckBrowse/BrowseCardRow'
 import { DeckCardFilterBar } from '@/components/deckBrowse/DeckCardFilterBar'
+import { buildEditCardPath } from '@/domain/editCardNavigation'
 import { savedCardWord } from '@/domain/templateFieldDisplay'
 import {
   countDeckCardsByStatus,
@@ -15,9 +16,19 @@ import { storage } from '@/storage/adapter'
 import { useLibraryStore } from '@/store/library/libraryStore'
 import type { SavedCard } from '@/types/cards'
 
+const STATUS_FILTERS = new Set<DeckCardStatusFilter>(['all', 'new', 'learning', 'mastered'])
+
+function parseStatusFilter(value: string | null): DeckCardStatusFilter {
+  if (value && STATUS_FILTERS.has(value as DeckCardStatusFilter)) {
+    return value as DeckCardStatusFilter
+  }
+  return 'all'
+}
+
 export function DeckBrowsePage() {
   const { deckId } = useParams<{ deckId: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { showToast } = useToast()
 
   const decks = useLibraryStore((s) => s.decks)
@@ -25,10 +36,13 @@ export function DeckBrowsePage() {
   const hydrated = useLibraryStore((s) => s.hydrated)
   const reload = useLibraryStore((s) => s.reload)
 
-  const [query, setQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<DeckCardStatusFilter>('all')
+  const [query, setQuery] = useState(() => searchParams.get('q') ?? '')
+  const [statusFilter, setStatusFilter] = useState<DeckCardStatusFilter>(() =>
+    parseStatusFilter(searchParams.get('filter')),
+  )
   const [busy, setBusy] = useState(false)
   const [actionsCard, setActionsCard] = useState<SavedCard | null>(null)
+  const scrollRestoredRef = useRef(false)
 
   const deck = useMemo(
     () => (deckId ? decks.find((d) => d.id === deckId) : undefined),
@@ -47,6 +61,39 @@ export function DeckBrowsePage() {
 
   const statusCounts = useMemo(() => countDeckCardsByStatus(deckCards), [deckCards])
 
+  const syncBrowseParams = useCallback(
+    (nextQuery: string, nextFilter: DeckCardStatusFilter, keepScrollY = false) => {
+      const params = new URLSearchParams()
+      if (nextQuery.trim()) params.set('q', nextQuery)
+      if (nextFilter !== 'all') params.set('filter', nextFilter)
+      if (keepScrollY) {
+        const scrollY = searchParams.get('scrollY')
+        if (scrollY) params.set('scrollY', scrollY)
+      }
+      setSearchParams(params, { replace: true })
+    },
+    [setSearchParams, searchParams],
+  )
+
+  useEffect(() => {
+    syncBrowseParams(query, statusFilter, !scrollRestoredRef.current)
+  }, [query, statusFilter, syncBrowseParams])
+
+  useLayoutEffect(() => {
+    if (scrollRestoredRef.current) return
+    const raw = searchParams.get('scrollY')
+    if (!raw) return
+    const scrollY = Number.parseInt(raw, 10)
+    if (!Number.isFinite(scrollY) || scrollY <= 0) return
+    scrollRestoredRef.current = true
+    requestAnimationFrame(() => {
+      window.scrollTo(0, scrollY)
+      const params = new URLSearchParams(searchParams)
+      params.delete('scrollY')
+      setSearchParams(params, { replace: true })
+    })
+  }, [searchParams, filteredCards.length, setSearchParams])
+
   if (hydrated && !deck) {
     return <Navigate to="/decks" replace />
   }
@@ -57,7 +104,7 @@ export function DeckBrowsePage() {
   }
 
   const handleDeleteCard = async (card: SavedCard) => {
-    if (!window.confirm(`Delete “${card.data.word}”?`)) return
+    if (!window.confirm(`Delete “${savedCardWord(card)}”?`)) return
     setBusy(true)
     try {
       await storage.cards.softDelete(card.id)
@@ -154,7 +201,17 @@ export function DeckBrowsePage() {
           if (!actionsCard || !deckId) return
           const cardId = actionsCard.id
           setActionsCard(null)
-          navigate(`/decks/${deckId}/cards/${cardId}/edit?from=browse`)
+          navigate(
+            buildEditCardPath(deckId, cardId, {
+              sourcePage: 'browse',
+              sourceDeckId: deckId,
+              sourceSessionState: {
+                query,
+                statusFilter,
+                scrollY: window.scrollY,
+              },
+            }),
+          )
         }}
         onDuplicate={() => {
           if (!actionsCard) return

@@ -1,195 +1,173 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { AddCardSettingsSheet } from '@/components/addCards/AddCardSettingsSheet'
-import { EditableTemplateCard } from '@/components/addCards/EditableTemplateCard'
+import { AiGenerationSettingsSheet } from '@/components/addCards/AiGenerationSettingsSheet'
+import { AiSettingsLink } from '@/components/addCards/AiSettingsLink'
+import { CardEditorActions } from '@/components/addCards/CardEditorActions'
+import { CardPreviewDivider } from '@/components/addCards/CardPreviewDivider'
+import { CardTemplatePickerLine } from '@/components/addCards/CardTemplatePickerLine'
+import { CardWordInputBar } from '@/components/addCards/CardWordInputBar'
+import { InvalidInputSuggestions } from '@/components/addCards/InvalidInputSuggestions'
+import { RegenerateCardDialog } from '@/components/addCards/RegenerateCardDialog'
 import { TemplateBuilderSheet } from '@/components/addCards/TemplateBuilderSheet'
+import { TemplateSelectionSheet } from '@/components/addCards/TemplateSelectionSheet'
 import { ActiveDeckSelector } from '@/components/layout/ActiveDeckSelector'
+import { FlashcardPreviewEditor } from '@/components/cardDisplay/FlashcardPreviewEditor'
 import {
   draftToCardData,
   draftToFrontBack,
-  generatedCardToDraft,
   savedCardToDraft,
   type CardDraft,
 } from '@/domain/cardDraft'
 import {
   createDefaultLanguageSettings,
-  languageSettingsToGenerationOptions,
   resolveLanguageSettings,
 } from '@/domain/deckSettings'
-import { deckTypeSupportsLanguageSettings } from '@/domain/deckTypes'
-import { resolveCardTemplate, resolveDeckDefaultTemplateId } from '@/domain/resolveDeckTemplate'
 import {
-  isGenerateMutationAbort,
-  useGenerateCardsMutation,
-} from '@/hooks/cards/useGenerateCardsMutation'
+  clearEditCardSourceContext,
+  parseEditCardSourceContext,
+  resolveEditCardReturnUrl,
+} from '@/domain/editCardNavigation'
+import { stampGenerationMetadata } from '@/domain/cardGenerationMetadata'
+import { stampCardTemplateSnapshot } from '@/domain/cardTemplateSnapshot'
+import { isLanguageDefaultTemplate } from '@/domain/cardTemplates'
+import { deckHasOtherCardsUsingTemplate } from '@/domain/deckTemplateUsage'
+import {
+  resolveCardTemplate,
+  resolveDeckDefaultTemplateId,
+  resolveSavedCardTemplate,
+  resolveSavedCardTemplateId,
+} from '@/domain/resolveDeckTemplate'
+import { resetTemplateToDefault, saveTemplateFromBuilder } from '@/domain/templatePersistence'
+import { templateSupportsAiGeneration } from '@/domain/templateGeneration'
+import { useCardAiGenerate } from '@/hooks/cards/useCardAiGenerate'
+import { useDeckTemplateChangeFlow } from '@/hooks/decks/useDeckTemplateChangeFlow'
 import { useToast } from '@/providers/toastContext'
-import { getApiErrorMessage } from '@/services/api/getApiErrorMessage'
 import { customTemplateRepository } from '@/storage/customTemplateRepository'
 import { storage } from '@/storage/adapter'
 import { useLayoutDispatch } from '@/store/generatedSession/reviewHooks'
 import { useLibraryStore } from '@/store/library/libraryStore'
-import type { GenerateCardsFormDto } from '@/types/cards'
-import type { LanguageDeckSettings } from '@/types/deckProfile'
+import type { SavedCard } from '@/types/cards'
+import type { CardTemplate } from '@/types/deckProfile'
 
-export function EditCardPageInner() {
-  const { deckId, cardId } = useParams<{ deckId: string; cardId: string }>()
+type EditCardEditorProps = {
+  card: SavedCard
+  returnUrl: string
+  sourceDeckId: string | undefined
+  onFinish: (cardMoved: boolean) => void
+}
+
+function EditCardEditor({ card, returnUrl, sourceDeckId, onFinish }: EditCardEditorProps) {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const fromMode = searchParams.get('from')
+  const { cardId } = useParams<{ cardId: string }>()
   const { setLayouts } = useLayoutDispatch()
   const { showToast } = useToast()
-  const generateMutation = useGenerateCardsMutation()
 
   const decks = useLibraryStore((s) => s.decks)
   const allCards = useLibraryStore((s) => s.cards)
-  const hydrated = useLibraryStore((s) => s.hydrated)
+  const activeDeckId = useLibraryStore((s) => s.activeDeckId)
   const reload = useLibraryStore((s) => s.reload)
-  const updateDeckSettings = useLibraryStore((s) => s.updateDeckSettings)
 
-  const deck = useMemo(
-    () => (deckId ? decks.find((d) => d.id === deckId) : undefined),
-    [decks, deckId],
+  const activeDeck = useMemo(
+    () => decks.find((d) => d.id === activeDeckId),
+    [decks, activeDeckId],
   )
-
-  const card = useMemo(() => {
-    if (!cardId) return undefined
-    const found = allCards.find((c) => c.id === cardId)
-    if (!found || (deckId && found.deckId !== deckId)) return undefined
-    return found
-  }, [allCards, cardId, deckId])
-
-  const backUrl = useMemo(() => {
-    if (fromMode === 'study' && cardId && deckId) {
-      return `/decks/${deckId}/study?card=${cardId}`
-    }
-    if (deckId) return `/decks/${deckId}/browse`
-    return '/decks'
-  }, [fromMode, cardId, deckId])
-
+  const activeDeckCards = useMemo(
+    () => (activeDeckId ? allCards.filter((c) => c.deckId === activeDeckId) : []),
+    [allCards, activeDeckId],
+  )
+  const { busy: templateChangeBusy, requestTemplateChange, flowUi } =
+    useDeckTemplateChangeFlow(activeDeck, activeDeckCards)
+  const activeDeckName = activeDeck?.name ?? 'selected deck'
   const deckDefaultTemplateId = useMemo(
-    () => resolveDeckDefaultTemplateId(deck),
-    [deck],
+    () => resolveDeckDefaultTemplateId(activeDeck),
+    [activeDeck],
   )
 
-  const initialTemplateId = card?.templateId ?? deckDefaultTemplateId
-  const [selectedTemplateId, setSelectedTemplateId] = useState(initialTemplateId)
+  const [cardTemplateId, setCardTemplateId] = useState(() => resolveSavedCardTemplateId(card))
+  const [cardTemplate, setCardTemplate] = useState<CardTemplate>(() => resolveSavedCardTemplate(card))
   const [templatesRefreshKey, setTemplatesRefreshKey] = useState(0)
-  const [draftLoaded, setDraftLoaded] = useState(false)
 
-  const cardTemplate = useMemo(
-    () => resolveCardTemplate(selectedTemplateId),
-    [selectedTemplateId, templatesRefreshKey],
+  const languageSettings = useMemo(
+    () => resolveLanguageSettings(activeDeck) ?? createDefaultLanguageSettings(),
+    [activeDeck],
   )
 
-  const showAiSettings = deckTypeSupportsLanguageSettings(deck?.deckTypeId)
-
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [templateBuilderOpen, setTemplateBuilderOpen] = useState(false)
-  const [templateBuilderMode, setTemplateBuilderMode] = useState<'create' | 'edit'>('create')
-  const [languageSettings, setLanguageSettings] = useState<LanguageDeckSettings>(
-    createDefaultLanguageSettings(),
+  const showAiFeatures = useMemo(
+    () => templateSupportsAiGeneration(cardTemplate),
+    [cardTemplate],
   )
 
-  const [draft, setDraft] = useState<CardDraft>({
-    data: { word: '', examples: [] },
-    definitions: [],
-    customSlots: {},
-  })
-  const [formError, setFormError] = useState<string | null>(null)
+  const [draft, setDraft] = useState<CardDraft>(() => savedCardToDraft(card, resolveSavedCardTemplate(card)))
   const [saveBusy, setSaveBusy] = useState(false)
+  const [aiRegenerated, setAiRegenerated] = useState(false)
+  const [templateSheetOpen, setTemplateSheetOpen] = useState(false)
+  const [templateBuilderOpen, setTemplateBuilderOpen] = useState(false)
+  const [templateBuilderMode, setTemplateBuilderMode] = useState<'create' | 'edit'>('edit')
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
+  const editingTemplate = useMemo(
+    () => (editingTemplateId ? resolveCardTemplate(editingTemplateId) : null),
+    [editingTemplateId, templatesRefreshKey],
+  )
 
-  const isGenerating = generateMutation.isPending
-  const busy = isGenerating || saveBusy
+  const pendingTemplateRegenRef = useRef<string | null>(null)
 
-  useEffect(() => {
-    const lang = resolveLanguageSettings(deck)
-    if (lang) setLanguageSettings(lang)
-  }, [deck])
+  const {
+    isGenerating,
+    invalidInput,
+    setInvalidInput,
+    formError,
+    runGenerate,
+    regenerateDialogOpen,
+    confirmRegenerate,
+    dismissRegenerateDialog,
+    aiSettings,
+  } = useCardAiGenerate({
+    cardTemplate,
+    templateId: cardTemplateId,
+    languageSettings,
+    draft,
+    setDraft,
+    confirmBeforeReplace: true,
+    generatedToastMessage: 'Card updated — review and edit as needed.',
+    onGenerated: () => setAiRegenerated(true),
+  })
 
-  useEffect(() => {
-    if (!card) return
-    const templateId = card.templateId ?? deckDefaultTemplateId
-    const template = resolveCardTemplate(templateId)
-    setSelectedTemplateId(templateId)
-    setDraft(savedCardToDraft(card, template))
-    setFormError(null)
-    setDraftLoaded(true)
-  }, [card, deckDefaultTemplateId])
+  const busy = isGenerating || saveBusy || templateChangeBusy
 
   useEffect(() => {
     setLayouts(cardTemplate.frontLayout, cardTemplate.backLayout)
   }, [cardTemplate, setLayouts])
 
-  const applyTemplate = useCallback(
-    (templateId: string) => {
-      setSelectedTemplateId(templateId)
-      if (card) {
-        setDraft(savedCardToDraft(card, resolveCardTemplate(templateId)))
-      }
-      setFormError(null)
+  useEffect(() => {
+    const template = resolveSavedCardTemplate(card)
+    setCardTemplate(template)
+    setCardTemplateId(resolveSavedCardTemplateId(card))
+    setDraft(savedCardToDraft(card, template))
+    setAiRegenerated(false)
+  }, [card])
+
+  useEffect(() => {
+    const pendingId = pendingTemplateRegenRef.current
+    if (!pendingId || pendingId !== cardTemplateId) return
+    pendingTemplateRegenRef.current = null
+    runGenerate(undefined, { skipConfirm: true })
+  }, [cardTemplateId, runGenerate])
+
+  const handleDraftChange = useCallback(
+    (next: CardDraft) => {
+      setDraft(next)
+      setInvalidInput(null)
     },
-    [card],
+    [setInvalidInput],
   )
 
-  const wordInput = draft.data.word.trim()
-
-  const buildGenerateForm = useCallback((): GenerateCardsFormDto => {
-    return {
-      input: wordInput,
-      sourceLanguage: languageSettings.sourceLanguage,
-      targetLanguage: languageSettings.targetLanguage,
-      options: languageSettingsToGenerationOptions(languageSettings, cardTemplate),
-    }
-  }, [wordInput, languageSettings, cardTemplate])
-
-  const generateFromWord = useCallback(() => {
-    if (!wordInput) {
-      showToast('Enter a word or phrase first.', 'error')
-      return
-    }
-
-    setFormError(null)
-    generateMutation.mutate(
-      {
-        form: buildGenerateForm(),
-        layout: {
-          frontLayout: cardTemplate.frontLayout,
-          backLayout: cardTemplate.backLayout,
-        },
-        templateId: selectedTemplateId,
-      },
-      {
-        onSuccess: ({ cards: generated }) => {
-          const next = generated[0]
-          if (!next) return
-          if (next.invalid) {
-            setFormError(
-              `Could not generate "${next.invalid.originalWord}". Check spelling or try another word.`,
-            )
-            return
-          }
-          setDraft(generatedCardToDraft(next.data, cardTemplate))
-          showToast('Card updated — review and edit as needed.', 'success')
-        },
-        onError: (err) => {
-          if (isGenerateMutationAbort(err)) return
-          const message = getApiErrorMessage(err)
-          setFormError(message)
-          showToast(message, 'error')
-        },
-      },
-    )
-  }, [
-    wordInput,
-    generateMutation,
-    buildGenerateForm,
-    cardTemplate,
-    selectedTemplateId,
-    showToast,
-  ])
+  const cancelEdit = useCallback(() => {
+    if (cardId) clearEditCardSourceContext(cardId)
+    navigate(returnUrl)
+  }, [cardId, navigate, returnUrl])
 
   const saveCard = async () => {
-    if (!card || !deckId) return
+    if (!activeDeckId) return
     const { front, back } = draftToFrontBack(cardTemplate, draft)
     if (!front || !back) {
       showToast('Fill in required fields.', 'error')
@@ -198,17 +176,25 @@ export function EditCardPageInner() {
     setSaveBusy(true)
     try {
       const data = draftToCardData(cardTemplate, draft)
-      await storage.cards.put({
-        ...card,
-        templateId: selectedTemplateId,
-        front,
-        back,
-        data,
-        updatedAt: new Date().toISOString(),
-      })
+      let saved = stampCardTemplateSnapshot(
+        {
+          ...card,
+          deckId: activeDeckId,
+          front,
+          back,
+          data,
+          updatedAt: new Date().toISOString(),
+        },
+        cardTemplate,
+      )
+      if (aiRegenerated) {
+        saved = stampGenerationMetadata(saved)
+      }
+      await storage.cards.put(saved)
       await reload()
-      showToast('Card saved.', 'success')
-      navigate(backUrl)
+      const cardMoved = activeDeckId !== sourceDeckId
+      showToast(`Card saved to ${activeDeckName}.`, 'success')
+      onFinish(cardMoved)
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Could not save card.', 'error')
     } finally {
@@ -216,54 +202,361 @@ export function EditCardPageInner() {
     }
   }
 
-  const saveSettings = () => {
-    if (showAiSettings && deckId) {
-      void updateDeckSettings(deckId, { language: languageSettings }).then(() => {
-        showToast('Settings saved.', 'success')
-        setSettingsOpen(false)
-      })
-      return
-    }
-    setSettingsOpen(false)
-  }
+  const handleTemplateChange = useCallback(
+    (templateId: string) => {
+      if (templateId === cardTemplateId) {
+        setTemplateSheetOpen(false)
+        return
+      }
+      pendingTemplateRegenRef.current = templateId
+      setCardTemplateId(templateId)
+      setCardTemplate(resolveCardTemplate(templateId))
+      setAiRegenerated(true)
+      setTemplateSheetOpen(false)
+    },
+    [cardTemplateId],
+  )
 
-  const openCreateTemplate = () => {
-    setSettingsOpen(false)
-    setTemplateBuilderMode('create')
-    setTemplateBuilderOpen(true)
-  }
-
-  const openEditTemplate = (templateId: string) => {
-    applyTemplate(templateId)
-    setSettingsOpen(false)
+  const openEditTemplate = useCallback((templateId: string) => {
+    setTemplateSheetOpen(false)
     setTemplateBuilderMode('edit')
+    setEditingTemplateId(templateId)
     setTemplateBuilderOpen(true)
-  }
+  }, [])
+
+  const openCreateTemplate = useCallback(() => {
+    setTemplateSheetOpen(false)
+    setTemplateBuilderMode('create')
+    setEditingTemplateId(null)
+    setTemplateBuilderOpen(true)
+  }, [])
+
+  const applyUpdatedTemplateToCurrentCard = useCallback((effectiveId: string) => {
+    const template = resolveCardTemplate(effectiveId)
+    setCardTemplate(template)
+    setCardTemplateId(effectiveId)
+    setAiRegenerated(true)
+    pendingTemplateRegenRef.current = effectiveId
+  }, [])
+
+  const requestTemplateModification = useCallback(
+    (effectiveId: string, applySave: () => void, onDone: () => void) => {
+      if (
+        !activeDeckId ||
+        !deckHasOtherCardsUsingTemplate(allCards, activeDeckId, effectiveId, card.id)
+      ) {
+        applySave()
+        onDone()
+        return
+      }
+      void requestTemplateChange({
+        newTemplateId: effectiveId,
+        mode: 'update',
+        dialogVariant: 'edit_card',
+        applyTemplateSave: applySave,
+        onProcessingStart: () => setTemplateBuilderOpen(false),
+        onComplete: onDone,
+        onOnlyNewCardsComplete: () => applyUpdatedTemplateToCurrentCard(effectiveId),
+      })
+    },
+    [
+      activeDeckId,
+      allCards,
+      card.id,
+      requestTemplateChange,
+      applyUpdatedTemplateToCurrentCard,
+    ],
+  )
 
   const handleTemplateSaved = (
     name: string,
-    fields: Parameters<typeof customTemplateRepository.save>[1],
+    fields: Parameters<typeof saveTemplateFromBuilder>[1],
     templateId?: string,
   ) => {
-    if (templateBuilderMode === 'edit' && templateId) {
-      const updated = customTemplateRepository.update(templateId, name, fields)
-      setTemplatesRefreshKey((k) => k + 1)
-      applyTemplate(updated.id)
-      showToast(`Template “${name}” updated.`, 'success')
-    } else {
-      const created = customTemplateRepository.save(name, fields)
-      setTemplatesRefreshKey((k) => k + 1)
-      applyTemplate(created.id)
-      showToast(`Template “${name}” created.`, 'success')
+    if (templateBuilderMode === 'create') {
+      try {
+        const saved = saveTemplateFromBuilder(name, fields, templateId)
+        setTemplatesRefreshKey((k) => k + 1)
+        setTemplateBuilderOpen(false)
+        setEditingTemplateId(null)
+        setTemplateBuilderMode('edit')
+        showToast(`Template “${name}” saved.`, 'success')
+        handleTemplateChange(saved.id)
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : 'Could not save template.', 'error')
+      }
+      return
     }
-    setTemplateBuilderOpen(false)
+
+    const effectiveId = (templateId ?? editingTemplateId ?? '').trim()
+    if (!effectiveId) return
+
+    const finishBuilder = () => {
+      setTemplateBuilderOpen(false)
+      setEditingTemplateId(null)
+      showToast(`Template “${name}” saved.`, 'success')
+    }
+
+    const applySave = () => {
+      saveTemplateFromBuilder(name, fields, effectiveId)
+    }
+
+    try {
+      requestTemplateModification(effectiveId, applySave, () => {
+        setTemplatesRefreshKey((k) => k + 1)
+        finishBuilder()
+        if (
+          !activeDeckId ||
+          !deckHasOtherCardsUsingTemplate(allCards, activeDeckId, effectiveId, card.id)
+        ) {
+          applyUpdatedTemplateToCurrentCard(effectiveId)
+        }
+      })
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not save template.', 'error')
+    }
   }
 
-  if (hydrated && (!deck || !card)) {
-    return <Navigate to={deckId ? `/decks/${deckId}/browse` : '/decks'} replace />
+  const handleResetLanguageDefault = () => {
+    if (!editingTemplateId) return
+    const effectiveId = editingTemplateId
+
+    const finishBuilder = () => {
+      setTemplateBuilderOpen(false)
+      setEditingTemplateId(null)
+      showToast('Basic Language Template reset.', 'success')
+    }
+
+    const applySave = () => {
+      resetTemplateToDefault(editingTemplateId)
+    }
+
+    requestTemplateModification(effectiveId, applySave, () => {
+      setTemplatesRefreshKey((k) => k + 1)
+      finishBuilder()
+      if (
+        !activeDeckId ||
+        !deckHasOtherCardsUsingTemplate(allCards, activeDeckId, effectiveId, card.id)
+      ) {
+        applyUpdatedTemplateToCurrentCard(effectiveId)
+      }
+    })
   }
 
-  if (!deck || !card || !draftLoaded) {
+  const handleDeleteTemplate = (templateId: string) => {
+    const template = resolveCardTemplate(templateId)
+    if (template.isBuiltin) return
+    if (!window.confirm(`Delete template “${template.name}”?`)) return
+    customTemplateRepository.delete(templateId)
+    setTemplatesRefreshKey((k) => k + 1)
+    if (cardTemplateId === templateId) {
+      const nextId = deckDefaultTemplateId
+      setCardTemplateId(nextId)
+      setCardTemplate(resolveCardTemplate(nextId))
+    }
+    showToast(`Template “${template.name}” deleted.`, 'success')
+  }
+
+  const aiGenerate = showAiFeatures
+    ? {
+        onClick: () => runGenerate(),
+        busy: isGenerating,
+        disabled: busy,
+      }
+    : undefined
+
+  return (
+    <main className="mx-auto w-full max-w-lg px-4 pb-8 pt-3 sm:px-6">
+      <header className="mb-3">
+        <div className="mb-2 flex min-w-0 items-center gap-2">
+          <Link
+            to={returnUrl}
+            onClick={() => {
+              if (cardId) clearEditCardSourceContext(cardId)
+            }}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 transition active:scale-95 dark:border-slate-700 dark:text-slate-300"
+            aria-label="Back"
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="m15 18-6-6 6-6" />
+            </svg>
+          </Link>
+          <h1 className="min-w-0 text-[22px] font-bold tracking-tight text-slate-900 dark:text-white">
+            Edit Card
+          </h1>
+        </div>
+        <ActiveDeckSelector variant="field" />
+      </header>
+
+      <section className="space-y-3">
+        <CardWordInputBar
+          draft={draft}
+          onChange={handleDraftChange}
+          disabled={busy}
+          aiGenerate={aiGenerate}
+        />
+
+        {invalidInput ? (
+          <InvalidInputSuggestions
+            suggestions={invalidInput.suggestions}
+            busy={isGenerating}
+            onSuggestion={(suggestion) => {
+              setDraft((prev) => ({ ...prev, data: { ...prev.data, input: suggestion } }))
+              runGenerate(suggestion, { skipConfirm: true })
+            }}
+          />
+        ) : null}
+
+        {showAiFeatures ? (
+          <AiSettingsLink
+            onClick={() => aiSettings.setAiSheetOpen(true)}
+            disabled={busy}
+          />
+        ) : null}
+
+        <CardTemplatePickerLine
+          templateName={cardTemplate.name}
+          onChangeClick={() => setTemplateSheetOpen(true)}
+          disabled={busy}
+        />
+
+        <CardPreviewDivider />
+
+        <FlashcardPreviewEditor
+          template={cardTemplate}
+          draft={draft}
+          onChange={handleDraftChange}
+          disabled={busy}
+        />
+
+        <CardEditorActions
+          showSaveCancel
+          onSave={() => void saveCard()}
+          onCancel={cancelEdit}
+          saveBusy={saveBusy}
+          busy={busy}
+          cancelLabel="Cancel"
+        />
+
+        {formError ? (
+          <p className="text-[13px] text-red-600" role="alert">
+            {formError}
+          </p>
+        ) : null}
+      </section>
+
+      <RegenerateCardDialog
+        open={regenerateDialogOpen}
+        busy={isGenerating}
+        onCancel={dismissRegenerateDialog}
+        onConfirm={confirmRegenerate}
+      />
+
+      <TemplateSelectionSheet
+        open={templateSheetOpen}
+        busy={busy}
+        value={cardTemplateId}
+        refreshKey={templatesRefreshKey}
+        onClose={() => setTemplateSheetOpen(false)}
+        onSelect={handleTemplateChange}
+        onCreateTemplate={openCreateTemplate}
+        onEditTemplate={openEditTemplate}
+        onDeleteTemplate={handleDeleteTemplate}
+      />
+
+      <TemplateBuilderSheet
+        open={templateBuilderOpen}
+        busy={busy}
+        mode={templateBuilderMode}
+        initialTemplate={templateBuilderMode === 'edit' ? editingTemplate : null}
+        lockTemplateName={
+          editingTemplateId != null && isLanguageDefaultTemplate(editingTemplateId)
+        }
+        showResetToDefault={
+          editingTemplateId != null && isLanguageDefaultTemplate(editingTemplateId)
+        }
+        onResetToDefault={handleResetLanguageDefault}
+        onClose={() => {
+          setTemplateBuilderOpen(false)
+          setEditingTemplateId(null)
+          setTemplateBuilderMode('edit')
+        }}
+        onSave={handleTemplateSaved}
+      />
+
+      <AiGenerationSettingsSheet
+        open={aiSettings.aiSheetOpen}
+        onClose={() => aiSettings.setAiSheetOpen(false)}
+        busy={busy}
+        difficulty={aiSettings.effectiveDifficulty}
+        tone={aiSettings.effectiveTone}
+        deckDifficulty={languageSettings.difficulty}
+        deckTone={languageSettings.tone}
+        onDifficultyChange={aiSettings.handleAiDifficultyChange}
+        onToneChange={aiSettings.handleAiToneChange}
+      />
+
+      {flowUi}
+    </main>
+  )
+}
+
+export function EditCardPageInner() {
+  const { deckId, cardId } = useParams<{ deckId: string; cardId: string }>()
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+
+  const allCards = useLibraryStore((s) => s.cards)
+  const hydrated = useLibraryStore((s) => s.hydrated)
+  const activeDeckId = useLibraryStore((s) => s.activeDeckId)
+  const setActiveDeckId = useLibraryStore((s) => s.setActiveDeckId)
+
+  const sourceContext = useMemo(
+    () => parseEditCardSourceContext(cardId, searchParams, deckId),
+    [cardId, searchParams, deckId],
+  )
+
+  const card = useMemo(() => {
+    if (!cardId) return undefined
+    return allCards.find((c) => c.id === cardId)
+  }, [allCards, cardId])
+
+  const returnUrl = useMemo(() => {
+    const fallbackDeckId = sourceContext?.sourceDeckId ?? deckId ?? card?.deckId ?? ''
+    if (!fallbackDeckId) return '/decks'
+    return resolveEditCardReturnUrl(sourceContext, fallbackDeckId)
+  }, [sourceContext, deckId, card?.deckId])
+
+  const sourceDeckId = sourceContext?.sourceDeckId ?? deckId ?? card?.deckId
+
+  const finishEditNavigation = useCallback(
+    (cardMoved: boolean) => {
+      if (!sourceDeckId) {
+        navigate('/decks')
+        return
+      }
+      navigate(resolveEditCardReturnUrl(sourceContext, sourceDeckId, { cardMoved }))
+      if (cardId) clearEditCardSourceContext(cardId)
+    },
+    [navigate, sourceContext, sourceDeckId, cardId],
+  )
+
+  useEffect(() => {
+    if (!card) return
+    void setActiveDeckId(card.deckId)
+  }, [card?.id, card?.deckId, setActiveDeckId])
+
+  if (hydrated && !card) {
+    const fallbackDeckId = sourceDeckId ?? deckId ?? activeDeckId
+    return (
+      <Navigate
+        to={fallbackDeckId ? resolveEditCardReturnUrl(sourceContext, fallbackDeckId) : '/decks'}
+        replace
+      />
+    )
+  }
+
+  if (!card) {
     return (
       <main className="mx-auto w-full max-w-lg flex-1 px-4 py-8">
         <p className="text-center text-[14px] text-slate-500">Loading card…</p>
@@ -272,99 +565,13 @@ export function EditCardPageInner() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-lg px-4 pb-8 pt-4 sm:px-6">
-      <header className="mb-4 space-y-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <Link
-            to={backUrl}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 transition active:scale-95 dark:border-slate-700 dark:text-slate-300"
-            aria-label="Back"
-          >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="m15 18-6-6 6-6" />
-            </svg>
-          </Link>
-          <button
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-            disabled={busy}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 text-slate-600 transition active:scale-95 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300"
-            aria-label="Open settings"
-          >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
-              />
-            </svg>
-          </button>
-          <h1 className="min-w-0 text-[22px] font-bold tracking-tight text-slate-900 dark:text-white">
-            Edit Card
-          </h1>
-        </div>
-        <ActiveDeckSelector variant="field" fixedDeckId={deckId} />
-      </header>
-
-      <section className="mb-6 space-y-4">
-        <EditableTemplateCard
-          template={cardTemplate}
-          draft={draft}
-          onChange={setDraft}
-          disabled={busy}
-          wordAiGenerate={{
-            onGenerate: generateFromWord,
-            busy: isGenerating,
-            disabled: busy,
-          }}
-        />
-
-        {formError ? (
-          <p className="text-[13px] text-red-600" role="alert">
-            {formError}
-          </p>
-        ) : null}
-
-        <button
-          type="button"
-          onClick={() => void saveCard()}
-          disabled={busy}
-          className="flex h-14 w-full items-center justify-center rounded-2xl bg-accent text-[16px] font-bold text-white disabled:opacity-40"
-        >
-          {saveBusy ? 'Saving…' : 'Save Card'}
-        </button>
-      </section>
-
-      <AddCardSettingsSheet
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        busy={busy}
-        selectedTemplateId={selectedTemplateId}
-        deckDefaultTemplateId={deckDefaultTemplateId}
-        templatesRefreshKey={templatesRefreshKey}
-        showAiSettings={showAiSettings}
-        languageSettings={languageSettings}
-        onTemplateChange={applyTemplate}
-        onCreateTemplate={openCreateTemplate}
-        onEditTemplate={openEditTemplate}
-        onLanguageSettingsChange={setLanguageSettings}
-        onSave={saveSettings}
-      />
-
-      <TemplateBuilderSheet
-        open={templateBuilderOpen}
-        busy={busy}
-        mode={templateBuilderMode}
-        initialTemplate={templateBuilderMode === 'edit' ? cardTemplate : null}
-        onClose={() => setTemplateBuilderOpen(false)}
-        onSave={handleTemplateSaved}
-      />
-    </main>
+    <EditCardEditor
+      key={card.id}
+      card={card}
+      returnUrl={returnUrl}
+      sourceDeckId={sourceDeckId}
+      onFinish={finishEditNavigation}
+    />
   )
 }
 

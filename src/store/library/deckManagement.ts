@@ -50,6 +50,28 @@ export async function updateDeckSettingsInStorage(
   return updated
 }
 
+/** Updates deck default template for newly created cards only — existing cards are not migrated. */
+export async function updateDeckDefaultTemplateInStorage(
+  deckId: string,
+  defaultTemplateId: string,
+): Promise<Deck> {
+  const trimmed = defaultTemplateId.trim()
+  if (!trimmed) throw new Error('Template is required.')
+
+  const existing = await storage.decks.getById(deckId)
+  if (!existing) throw new Error('Deck not found.')
+
+  const t = nowIso()
+  const updated: Deck = {
+    ...existing,
+    defaultTemplateId: trimmed,
+    templateId: trimmed,
+    updatedAt: t,
+  }
+  await storage.decks.put(updated)
+  return updated
+}
+
 export async function deleteDeckInStorage(
   deckId: string,
   mode: DeleteDeckMode,
@@ -116,8 +138,8 @@ export async function createDeckInStorage(params: CreateDeckParams): Promise<Dec
     updatedAt: t,
     lastUsedAt: t,
     deckTypeId: params.deckTypeId,
-    defaultTemplateId: params.defaultTemplateId || defaultTemplateIdForDeckType(),
-    templateId: params.defaultTemplateId || defaultTemplateIdForDeckType(),
+    defaultTemplateId: params.defaultTemplateId || defaultTemplateIdForDeckType(params.deckTypeId),
+    templateId: params.defaultTemplateId || defaultTemplateIdForDeckType(params.deckTypeId),
     settings: params.settings ?? createDefaultDeckSettings(params.deckTypeId),
   }
   await storage.decks.put(deck)

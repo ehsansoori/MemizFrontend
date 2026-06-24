@@ -1,28 +1,22 @@
 import type { TemplateFieldDef } from '@/types/deckProfile'
 import type { CardTemplate } from '@/types/deckProfile'
-import {
-  getCustomConfig,
-  getDefinitionConfig,
-  getExamplesConfig,
-  resolveFieldKind,
-} from '@/domain/expandTemplateFields'
+import { getExamplesConfig, getPronunciationsConfig, resolveFieldKind } from '@/domain/expandTemplateFields'
 
-export type SimpleCardPatchKey =
-  | 'word'
-  | 'phonetic'
-  | 'partOfSpeech'
-  | 'targetMeaning'
-  | 'englishMeaning'
-  | 'notes'
+export type LanguageCardPatchKey = 'input' | 'translation' | 'partOfSpeech'
 
 export type TemplateCardBlock =
   | {
       type: 'simple'
       id: string
       label: string
-      patchKey: SimpleCardPatchKey
-      input: 'text' | 'multiline' | 'tag'
+      patchKey: LanguageCardPatchKey
       prominent?: boolean
+    }
+  | {
+      type: 'pronunciations'
+      id: string
+      label: string
+      sources: string[]
     }
   | {
       type: 'examples'
@@ -30,22 +24,6 @@ export type TemplateCardBlock =
       label: string
       count: number
       includeTranslation: boolean
-    }
-  | {
-      type: 'definitions'
-      id: string
-      label: string
-      count: number
-      includeTranslation: boolean
-    }
-  | { type: 'audio'; id: string; label: string }
-  | { type: 'image'; id: string; label: string }
-  | {
-      type: 'custom'
-      id: string
-      label: string
-      count: number
-      input: 'text' | 'multiline' | 'image' | 'audio' | 'video'
     }
 
 function fieldToBlock(field: TemplateFieldDef): TemplateCardBlock | null {
@@ -62,104 +40,45 @@ function fieldToBlock(field: TemplateFieldDef): TemplateCardBlock | null {
     }
   }
 
-  if (kind === 'definition') {
-    const cfg = getDefinitionConfig(field)
-    return {
-      type: 'definitions',
-      id: field.id,
-      label: field.label,
-      count: cfg.count,
-      includeTranslation: cfg.includeTranslation,
-    }
-  }
-
-  if (kind === 'custom') {
-    const cfg = getCustomConfig(field)
-    const input =
-      cfg.fieldType === 'editableText'
-        ? 'multiline'
-        : cfg.fieldType === 'image'
-          ? 'image'
-          : cfg.fieldType === 'audio'
-            ? 'audio'
-            : cfg.fieldType === 'video'
-              ? 'video'
-              : 'text'
-    return {
-      type: 'custom',
-      id: field.id,
-      label: cfg.name,
-      count: Math.max(1, cfg.count),
-      input,
-    }
-  }
-
-  if (field.fieldType === 'audio' || kind === 'audio') {
-    return { type: 'audio', id: field.id, label: field.label }
-  }
-
-  if (field.fieldType === 'image') {
-    return { type: 'image', id: field.id, label: field.label }
-  }
-
-  if (field.label === 'Word' || field.key.startsWith('word')) {
+  if (kind === 'input') {
     return {
       type: 'simple',
       id: field.id,
       label: field.label,
-      patchKey: 'word',
-      input: 'text',
-      prominent: true,
+      patchKey: 'input',
+      prominent: field.side === 'front',
     }
   }
 
-  if (field.label === 'Meaning' || field.key.startsWith('meaning')) {
+  if (kind === 'translation') {
     return {
       type: 'simple',
       id: field.id,
       label: field.label,
-      patchKey: 'targetMeaning',
-      input: 'multiline',
+      patchKey: 'translation',
     }
   }
 
-  if (field.label === 'Pronunciation' || field.key.startsWith('phonetic')) {
+  if (kind === 'pronunciations') {
+    const cfg = getPronunciationsConfig(field)
     return {
-      type: 'simple',
+      type: 'pronunciations',
       id: field.id,
       label: field.label,
-      patchKey: 'phonetic',
-      input: 'text',
+      sources: cfg.sources,
     }
   }
 
-  if (field.label === 'Part Of Speech' || field.key.startsWith('part_of_speech')) {
+  if (kind === 'partOfSpeech') {
     return {
       type: 'simple',
       id: field.id,
       label: field.label,
       patchKey: 'partOfSpeech',
-      input: 'tag',
     }
   }
 
-  if (field.label === 'Note' || field.key.startsWith('note')) {
-    return {
-      type: 'simple',
-      id: field.id,
-      label: field.label,
-      patchKey: 'notes',
-      input: 'multiline',
-    }
-  }
-
-  return {
-    type: 'simple',
-    id: field.id,
-    label: field.label,
-    patchKey: 'notes',
-    input: field.fieldType === 'longText' ? 'multiline' : 'text',
-  }
+  return null
 }
 
 export function getTemplateCardBlocks(template: CardTemplate): {
@@ -177,4 +96,35 @@ export function getTemplateCardBlocks(template: CardTemplate): {
   }
 
   return { front, back }
+}
+
+function blockFieldKind(block: TemplateCardBlock): string {
+  if (block.type === 'simple') return block.patchKey
+  return block.type
+}
+
+export function getFrontFieldKinds(template: CardTemplate): Set<string> {
+  const kinds = new Set<string>()
+  for (const field of template.fields) {
+    if (field.side !== 'front') continue
+    const kind = resolveFieldKind(field)
+    if (kind) kinds.add(kind)
+  }
+  return kinds
+}
+
+function templateIncludesExamplesField(template: CardTemplate): boolean {
+  return template.fields.some((field) => resolveFieldKind(field) === 'examples')
+}
+
+/** Back blocks for study/quiz — omits fields already shown on the front. */
+export function getReviewBackBlocks(template: CardTemplate): TemplateCardBlock[] {
+  const { back } = getTemplateCardBlocks(template)
+  const frontKinds = getFrontFieldKinds(template)
+  const hasExamplesField = templateIncludesExamplesField(template)
+  return back.filter((block) => {
+    if (frontKinds.has(blockFieldKind(block))) return false
+    if (block.type === 'examples' && !hasExamplesField) return false
+    return true
+  })
 }

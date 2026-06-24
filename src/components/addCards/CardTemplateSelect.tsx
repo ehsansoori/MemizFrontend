@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { listAllTemplates } from '@/domain/resolveDeckTemplate'
+import { canEditInDefaultTemplateDropdown, isCustomTemplate, isTemplateEditable } from '@/domain/cardTemplates'
+import { listTemplatesForPicker } from '@/domain/resolveDeckTemplate'
+import type { CardTemplate, DeckTypeId } from '@/types/deckProfile'
 
 type CardTemplateSelectProps = {
   value: string
@@ -8,8 +10,12 @@ type CardTemplateSelectProps = {
   label?: string
   hint?: string
   refreshKey?: number
+  deckTypeId?: DeckTypeId
+  /** When true, edit/delete appear only on custom templates (Default Template dropdown). */
+  customTemplateActionsOnly?: boolean
   onCreateTemplate?: () => void
   onEditTemplate?: (templateId: string) => void
+  onDeleteTemplate?: (templateId: string) => void
 }
 
 const triggerClass =
@@ -33,6 +39,26 @@ function EditIcon() {
   )
 }
 
+function DeleteIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  )
+}
+
 export function CardTemplateSelect({
   value,
   onChange,
@@ -40,12 +66,16 @@ export function CardTemplateSelect({
   label = 'Template',
   hint,
   refreshKey = 0,
+  deckTypeId: _deckTypeId,
+  customTemplateActionsOnly = false,
   onCreateTemplate,
   onEditTemplate,
+  onDeleteTemplate,
 }: CardTemplateSelectProps) {
-  const templates = useMemo(() => listAllTemplates(), [refreshKey])
+  const templates = useMemo(() => listTemplatesForPicker(), [refreshKey])
   const selected = templates.find((t) => t.id === value)
-  const useMenu = onCreateTemplate != null || onEditTemplate != null
+  const useMenu =
+    onCreateTemplate != null || onEditTemplate != null || onDeleteTemplate != null
 
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -58,6 +88,13 @@ export function CardTemplateSelect({
     document.addEventListener('pointerdown', onPointerDown)
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [open])
+
+  const canEdit = (template: (typeof templates)[number]) => {
+    if (customTemplateActionsOnly) return canEditInDefaultTemplateDropdown(template)
+    return isTemplateEditable(template)
+  }
+
+  const canDelete = (template: CardTemplate) => isCustomTemplate(template)
 
   if (!useMenu) {
     return (
@@ -120,11 +157,13 @@ export function CardTemplateSelect({
         >
           {templates.map((t) => {
             const isSelected = t.id === value
+            const showEdit = canEdit(t) && onEditTemplate
+            const showDelete = canDelete(t) && onDeleteTemplate
             return (
               <div
                 key={t.id}
                 className={[
-                  'flex items-center gap-1 pr-1',
+                  'flex items-center gap-0.5 pr-1',
                   isSelected ? 'bg-accent/5' : '',
                 ].join(' ')}
               >
@@ -140,7 +179,7 @@ export function CardTemplateSelect({
                 >
                   {t.name}
                 </button>
-                {!t.isBuiltin && onEditTemplate ? (
+                {showEdit ? (
                   <button
                     type="button"
                     disabled={disabled}
@@ -154,6 +193,22 @@ export function CardTemplateSelect({
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 hover:text-accent dark:hover:bg-slate-800"
                   >
                     <EditIcon />
+                  </button>
+                ) : null}
+                {showDelete ? (
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    aria-label={`Delete ${t.name}`}
+                    title={`Delete ${t.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setOpen(false)
+                      onDeleteTemplate(t.id)
+                    }}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                  >
+                    <DeleteIcon />
                   </button>
                 ) : null}
               </div>

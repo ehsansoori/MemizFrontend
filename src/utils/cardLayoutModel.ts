@@ -22,11 +22,11 @@ export function normalizeLayoutOrder(layout: CardFieldLayout[]): CardFieldLayout
 }
 
 export function createDefaultFrontLayout(): CardFieldLayout[] {
-  return [createLayoutBlock('word', 0)]
+  return [createLayoutBlock('input', 0)]
 }
 
 export function createDefaultBackLayout(): CardFieldLayout[] {
-  const keys = ALL_CARD_FIELD_KEYS.filter((k) => k !== 'word')
+  const keys = ALL_CARD_FIELD_KEYS.filter((k) => k !== 'input')
   return keys.map((fieldType, order) => createLayoutBlock(fieldType, order))
 }
 
@@ -221,14 +221,12 @@ export function fieldTypesInOrder(layout: CardFieldLayout[]): CardFieldKey[] {
 }
 
 export const PREVIEW_SAMPLE_DATA: GeneratedCardData = {
-  word: 'study',
-  phonetic: '/stʌdi/',
-  partOfSpeech: 'noun · verb',
-  targetMeaning: 'مطالعه، درس خواندن',
-  englishMeaning: 'study, learning',
+  input: 'study',
+  pronunciations: [{ accent: '', phonetic: '/stʌdi/' }],
+  partOfSpeech: ['noun', 'verb'],
+  translation: 'مطالعه، درس خواندن',
   examples: [
-    { text: 'I study every day.', translation: 'من هر روز مطالعه می‌کنم.' },
-    { text: 'She studies at the library.', translation: 'او در کتابخانه درس می‌خواند.' },
+    { sentence: 'I study every day.', translation: 'من هر روز مطالعه می‌کنم.' },
+    { sentence: 'She studies at the library.', translation: 'او در کتابخانه درس می‌خواند.' },
   ],
-  notes: 'Layout preview — generate a draft to edit your own cards.',
 }

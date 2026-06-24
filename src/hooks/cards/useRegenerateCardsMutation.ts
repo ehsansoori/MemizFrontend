@@ -30,6 +30,7 @@ function formFromCard(card: GeneratedCard): GenerateCardsFormDto {
     options: {
       tone: m.tone,
       difficulty: m.difficulty,
+      pronunciations: m.pronunciations ?? [],
       exampleCount: m.exampleCount,
       includePhonetic: m.includePhonetic,
       includePartOfSpeech: m.includePartOfSpeech,

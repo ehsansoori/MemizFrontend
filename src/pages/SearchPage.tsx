@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { DeckCardPreviewSheet } from '@/components/deckDetails/DeckCardPreviewSheet'
 import { CARD_STATUS_LABELS, CARD_STATUS_STYLES } from '@/domain/cardStudyDisplay'
+import { savedCardWord } from '@/domain/templateFieldDisplay'
 import { filterAndRankCardsBySearch } from '@/domain/cardSearch'
 import { useLibraryStore } from '@/store/library/libraryStore'
 import type { SavedCard } from '@/types/cards'
@@ -144,7 +145,7 @@ export function SearchPage() {
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[16px] font-semibold text-slate-900 dark:text-white">
-                      {card.data.word}
+                      {savedCardWord(card)}
                     </p>
                     <p className="mt-0.5 truncate text-[13px] text-slate-500 dark:text-slate-400">
                       {deckName}

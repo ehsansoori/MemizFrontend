@@ -26,10 +26,7 @@ export type DraftTemplate = {
 }
 
 function minimalBackLayout(): CardFieldLayout[] {
-  return normalizeLayoutOrder([
-    createLayoutBlock('targetMeaning', 0),
-    createLayoutBlock('englishMeaning', 1),
-  ])
+  return normalizeLayoutOrder([createLayoutBlock('translation', 0)])
 }
 
 function detailedBackLayout(): CardFieldLayout[] {

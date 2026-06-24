@@ -5,6 +5,9 @@ import { DeckActionsSheet } from '@/components/decks/DeckActionsSheet'
 import { DeckCreateSheet } from '@/components/decks/DeckCreateSheet'
 import { DeckDeleteDialog } from '@/components/decks/DeckDeleteDialog'
 import { DeckNameSheet } from '@/components/decks/DeckNameSheet'
+import { isLanguageDefaultTemplate } from '@/domain/cardTemplates'
+import { resetTemplateToDefault, saveTemplateFromBuilder } from '@/domain/templatePersistence'
+import { resolveCardTemplate } from '@/domain/resolveDeckTemplate'
 import { customTemplateRepository } from '@/storage/customTemplateRepository'
 import { countByQueue } from '@/domain/reviewQueue'
 import { findInboxDeck } from '@/domain/inboxDeck'
@@ -53,6 +56,9 @@ export function DecksPage() {
   const [query, setQuery] = useState('')
   const [creating, setCreating] = useState(false)
   const [templateBuilderOpen, setTemplateBuilderOpen] = useState(false)
+  const [templateBuilderMode, setTemplateBuilderMode] = useState<'create' | 'edit'>('create')
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
+  const [templatesRefreshKey, setTemplatesRefreshKey] = useState(0)
   const [deckCreateTemplateId, setDeckCreateTemplateId] = useState<string | undefined>()
   const [resumeDeckCreate, setResumeDeckCreate] = useState(false)
   const [renameTarget, setRenameTarget] = useState<Deck | null>(null)
@@ -85,6 +91,19 @@ export function DecksPage() {
 
   const inboxDeck = useMemo(() => findInboxDeck(decks), [decks])
   const canDeleteDeck = decks.length > 1
+  const editingTemplate = useMemo(
+    () => (editingTemplateId ? resolveCardTemplate(editingTemplateId) : null),
+    [editingTemplateId, templatesRefreshKey],
+  )
+
+  const handleDeleteTemplate = (templateId: string) => {
+    const template = resolveCardTemplate(templateId)
+    if (template.isBuiltin) return
+    if (!window.confirm(`Delete template “${template.name}”?`)) return
+    customTemplateRepository.delete(templateId)
+    setTemplatesRefreshKey((k) => k + 1)
+    showToast(`Template “${template.name}” deleted.`, 'success')
+  }
 
   const openDeck = async (deckId: string) => {
     await setActiveDeckId(deckId)
@@ -359,6 +378,7 @@ export function DecksPage() {
         open={creating}
         busy={busy}
         initialTemplateId={deckCreateTemplateId}
+        templatesRefreshKey={templatesRefreshKey}
         onClose={() => {
           setCreating(false)
           setDeckCreateTemplateId(undefined)
@@ -367,25 +387,60 @@ export function DecksPage() {
         onCreateTemplate={() => {
           setCreating(false)
           setResumeDeckCreate(true)
+          setTemplateBuilderMode('create')
+          setEditingTemplateId(null)
           setTemplateBuilderOpen(true)
         }}
+        onEditTemplate={(templateId) => {
+          setCreating(false)
+          setResumeDeckCreate(true)
+          setTemplateBuilderMode('edit')
+          setEditingTemplateId(templateId)
+          setTemplateBuilderOpen(true)
+        }}
+        onDeleteTemplate={handleDeleteTemplate}
       />
 
       <TemplateBuilderSheet
         open={templateBuilderOpen}
         busy={busy}
+        mode={templateBuilderMode}
+        initialTemplate={templateBuilderMode === 'edit' ? editingTemplate : null}
+        lockTemplateName={
+          templateBuilderMode === 'edit' && isLanguageDefaultTemplate(editingTemplateId ?? '')
+        }
+        showResetToDefault={
+          templateBuilderMode === 'edit' && isLanguageDefaultTemplate(editingTemplateId ?? '')
+        }
+        onResetToDefault={() => {
+          if (!editingTemplateId) return
+          resetTemplateToDefault(editingTemplateId)
+          setTemplatesRefreshKey((k) => k + 1)
+          setTemplateBuilderOpen(false)
+          setResumeDeckCreate(false)
+          setEditingTemplateId(null)
+          setTemplateBuilderMode('create')
+          setDeckCreateTemplateId(undefined)
+          setCreating(true)
+          showToast('Language Default reset to original layout.', 'success')
+        }}
         onClose={() => {
           setTemplateBuilderOpen(false)
+          setEditingTemplateId(null)
+          setTemplateBuilderMode('create')
           if (resumeDeckCreate) {
             setResumeDeckCreate(false)
             setCreating(true)
           }
         }}
-        onSave={(name, fields) => {
-          const saved = customTemplateRepository.save(name, fields)
+        onSave={(name, fields, templateId) => {
+          const saved = saveTemplateFromBuilder(name, fields, templateId)
+          setTemplatesRefreshKey((k) => k + 1)
           showToast(`Template “${name}” saved.`, 'success')
           setTemplateBuilderOpen(false)
           setResumeDeckCreate(false)
+          setEditingTemplateId(null)
+          setTemplateBuilderMode('create')
           setDeckCreateTemplateId(saved.id)
           setCreating(true)
         }}

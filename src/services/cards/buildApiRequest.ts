@@ -12,6 +12,7 @@ export function toApiOptions(
   options: CardGenerationOptionsDto,
 ): ApiGenerateCardsRequestDto['options'] {
   return {
+    pronunciations: options.pronunciations,
     includePhonetic: options.includePhonetic,
     includePartOfSpeech: options.includePartOfSpeech,
     includeTargetMeaning: options.includeTargetMeaning,
@@ -30,13 +31,8 @@ export function buildApiGenerateRequest(
   const inputs = overrides?.inputs ?? parseInputTerms(form.input)
   return {
     inputs,
-    inputType: 'word',
     sourceLanguage: form.sourceLanguage,
     targetLanguage: form.targetLanguage,
-    domain: 'daily conversation',
-    templateName: 'basic-vocabulary',
-    dictionaryProvider: 'default',
-    aiProvider: 'openai',
     options: toApiOptions(form.options),
   }
 }

@@ -1,4 +1,9 @@
 import { ALL_CARD_FIELD_KEYS } from '@/store/generatedSession/constants'
+import {
+  cardInput,
+  exampleSentence,
+  exampleTranslation,
+} from '@/domain/languageCardData'
 import type { CardFieldKey, GeneratedCardData, SavedCard } from '@/types/cards'
 import { fieldLabel } from '@/utils/renderCardFace'
 
@@ -18,6 +23,13 @@ function normalizeText(text: string): string {
   return text.toLowerCase().normalize('NFKC').trim()
 }
 
+function pronunciationsText(data: GeneratedCardData): string {
+  return (data.pronunciations ?? [])
+    .map((p) => `${p.accent} ${p.phonetic}`.trim())
+    .filter(Boolean)
+    .join('\n')
+}
+
 /** Plain text for exactly one searchable field (no labels, no other fields). */
 export function getFieldSearchText(
   data: GeneratedCardData,
@@ -25,37 +37,27 @@ export function getFieldSearchText(
 ): string {
   switch (field) {
     case 'all': {
-      const parts: string[] = [data.word]
-      if (data.phonetic) parts.push(data.phonetic)
-      if (data.partOfSpeech) parts.push(data.partOfSpeech)
-      if (data.targetMeaning) parts.push(data.targetMeaning)
-      if (data.englishMeaning) parts.push(data.englishMeaning)
-      if (data.notes) parts.push(data.notes)
+      const parts: string[] = [cardInput(data)]
+      if (data.translation) parts.push(data.translation)
+      if (data.pronunciations?.length) parts.push(pronunciationsText(data))
+      if (data.partOfSpeech?.length) parts.push(data.partOfSpeech.join(' '))
       for (const ex of data.examples) {
-        parts.push(ex.text)
-        if (ex.translation) parts.push(ex.translation)
+        parts.push(exampleSentence(ex))
+        const tr = exampleTranslation(ex)
+        if (tr) parts.push(tr)
       }
-      return parts.join('\n')
+      return parts.filter(Boolean).join('\n')
     }
-    case 'word':
-      return data.word ?? ''
-    case 'phonetic':
-      return data.phonetic ?? ''
+    case 'input':
+      return cardInput(data)
+    case 'translation':
+      return data.translation ?? ''
+    case 'pronunciations':
+      return pronunciationsText(data)
     case 'partOfSpeech':
-      return data.partOfSpeech ?? ''
-    case 'targetMeaning':
-      return data.targetMeaning ?? ''
-    case 'englishMeaning':
-      return data.englishMeaning ?? ''
-    case 'notes':
-      return data.notes ?? ''
+      return data.partOfSpeech?.join(' ') ?? ''
     case 'examples':
-      return data.examples.map((e) => e.text).join('\n')
-    case 'exampleTranslations':
-      return data.examples
-        .map((e) => e.translation ?? '')
-        .filter(Boolean)
-        .join('\n')
+      return data.examples.map((e) => exampleSentence(e)).join('\n')
     default:
       return ''
   }

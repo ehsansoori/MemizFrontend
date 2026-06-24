@@ -3,12 +3,14 @@ import type { CardFieldLayout, DifficultyOption, ToneOption } from '@/types/card
 /** Purpose of a deck — drives which settings are available. */
 export type DeckTypeId =
   | 'language_learning'
+  | 'question_answer'
+  | 'term_definition'
+  | 'custom'
   | 'it_certification'
   | 'medical'
   | 'history'
   | 'geography'
   | 'law'
-  | 'custom'
 
 export type TemplateFieldType =
   | 'text'
@@ -20,8 +22,14 @@ export type TemplateFieldType =
   | 'url'
   | 'number'
 
-/** Semantic field kinds — may expand into multiple concrete fields. */
-export type TemplateFieldKind = TemplateFieldType | 'examples' | 'definition' | 'custom'
+/** Semantic field kinds for language card templates. */
+export type TemplateFieldKind =
+  | TemplateFieldType
+  | 'input'
+  | 'translation'
+  | 'pronunciations'
+  | 'partOfSpeech'
+  | 'examples'
 
 export type RepeatableFieldConfig = {
   count: 1 | 2 | 3 | 4 | 5
@@ -30,6 +38,11 @@ export type RepeatableFieldConfig = {
 
 export type ExamplesFieldConfig = RepeatableFieldConfig
 export type DefinitionFieldConfig = RepeatableFieldConfig
+
+/** Accent/source codes requested during generation (e.g. us, br). */
+export type PronunciationsFieldConfig = {
+  sources: string[]
+}
 
 export type CustomFieldType = 'text' | 'editableText' | 'image' | 'audio' | 'video'
 export type MediaSourceMode = 'upload' | 'record'
@@ -45,9 +58,13 @@ export type CustomFieldConfig = {
 export type TemplateFieldConfig =
   | ExamplesFieldConfig
   | DefinitionFieldConfig
+  | PronunciationsFieldConfig
   | CustomFieldConfig
 
 export type TemplateFieldSide = 'front' | 'back'
+
+/** Where a template field is placed — each field exists on exactly one side. */
+export type FieldPlacement = TemplateFieldSide
 
 /** One field slot on a card template (no language/generation settings). */
 export type TemplateFieldDef = {

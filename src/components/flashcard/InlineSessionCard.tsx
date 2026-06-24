@@ -38,7 +38,7 @@ export function InlineSessionCard({
   )
 
   const assignFromPalette = (ft: CardFieldKey) => {
-    const side = ft === 'word' ? 'front' : 'back'
+    const side = ft === 'input' ? 'front' : 'back'
     const next = assignFieldToSide(frontLayout, backLayout, ft, side)
     onLayoutsChange(next.front, next.back)
     setAddOpen(false)

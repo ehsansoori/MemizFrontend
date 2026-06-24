@@ -3,7 +3,8 @@ import {
   findInboxDeck,
   isReservedInboxName,
 } from '@/domain/inboxDeck'
-import { resolveDeckDefaultTemplateId } from '@/domain/resolveDeckTemplate'
+import { stampCardTemplateSnapshot } from '@/domain/cardTemplateSnapshot'
+import { resolveDeckDefaultTemplateId, resolveCardTemplate } from '@/domain/resolveDeckTemplate'
 import { createDefaultStudyProgress } from '@/domain/studyDefaults'
 import { renderCardFaceText } from '@/utils/renderCardFace'
 import { storage } from '@/storage/adapter'
@@ -23,19 +24,24 @@ function savedCardFromGenerated(
   deckId: string,
   fallbackTemplateId: string,
 ): SavedCard {
+  const templateId = card.templateId ?? fallbackTemplateId
+  const template = resolveCardTemplate(templateId)
   const t = nowIso()
-  return {
-    id: newId(),
-    originalGeneratedCardId: card.id,
-    deckId,
-    templateId: card.templateId ?? fallbackTemplateId,
-    front: renderCardFaceText(card.data, card.frontLayout),
-    back: renderCardFaceText(card.data, card.backLayout),
-    data: { ...card.data, examples: card.data.examples.map((e) => ({ ...e })) },
-    savedAt: t,
-    updatedAt: t,
-    study: createDefaultStudyProgress(),
-  }
+  return stampCardTemplateSnapshot(
+    {
+      id: newId(),
+      originalGeneratedCardId: card.id,
+      deckId,
+      templateId,
+      front: renderCardFaceText(card.data, card.frontLayout),
+      back: renderCardFaceText(card.data, card.backLayout),
+      data: { ...card.data, examples: card.data.examples.map((e) => ({ ...e })) },
+      savedAt: t,
+      updatedAt: t,
+      study: createDefaultStudyProgress(),
+    },
+    template,
+  )
 }
 
 /**

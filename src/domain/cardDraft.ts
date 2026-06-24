@@ -1,38 +1,39 @@
-import type { ExampleSentenceDto, GeneratedCardData, SavedCard } from '@/types/cards'
+import type { GeneratedCardData, SavedCard } from '@/types/cards'
 import type { CardTemplate } from '@/types/deckProfile'
-import {
-  getDefinitionConfig,
-  getExamplesConfig,
-  resolveFieldKind,
-} from '@/domain/expandTemplateFields'
+import { cardInput, normalizeGeneratedCardData } from '@/domain/languageCardData'
+import { getExamplesConfig, resolveFieldKind } from '@/domain/expandTemplateFields'
 import {
   cardDataToTemplateValues,
+  templateHasExamplesField,
   templateValuesToCardData,
-  templateValuesToDefinitions,
   templateValuesToFrontBack,
   type TemplateFieldValues,
 } from '@/domain/templateUtils'
 
 export type CardDraft = {
   data: GeneratedCardData
-  definitions: ExampleSentenceDto[]
-  customSlots: Record<string, string[]>
 }
 
 export function emptyCardDraft(template: CardTemplate): CardDraft {
   const examplesField = template.fields.find((f) => resolveFieldKind(f) === 'examples')
   const exampleCount = examplesField ? getExamplesConfig(examplesField).count : 0
 
-  const definitionField = template.fields.find((f) => resolveFieldKind(f) === 'definition')
-  const definitionCount = definitionField ? getDefinitionConfig(definitionField).count : 0
-
   return {
     data: {
-      word: '',
-      examples: Array.from({ length: exampleCount }, () => ({ text: '' })),
+      input: '',
+      examples: Array.from({ length: exampleCount }, () => ({ sentence: '' })),
     },
-    definitions: Array.from({ length: definitionCount }, () => ({ text: '' })),
-    customSlots: {},
+  }
+}
+
+/** Keep front input, clear generated back content after cancel. */
+export function discardGeneratedDraft(draft: CardDraft, template: CardTemplate): CardDraft {
+  const empty = emptyCardDraft(template)
+  return {
+    data: {
+      ...empty.data,
+      input: draft.data.input,
+    },
   }
 }
 
@@ -40,35 +41,28 @@ export function generatedCardToDraft(
   data: GeneratedCardData,
   template: CardTemplate,
 ): CardDraft {
-  const base = emptyCardDraft(template)
-  const values = cardDataToTemplateValues(data, template)
-  const definitions = templateValuesToDefinitions(template, values)
-
-  const examples = [...data.examples]
-  while (examples.length < base.data.examples.length) {
-    examples.push({ text: '' })
+  if (!templateHasExamplesField(template)) {
+    return {
+      data: {
+        ...normalizeGeneratedCardData(data),
+        input: cardInput(data),
+        examples: [],
+      },
+    }
   }
 
-  const defs =
-    definitions.length > 0
-      ? definitions
-      : base.definitions.length > 0
-        ? data.englishMeaning
-          ? [{ text: data.englishMeaning, translation: undefined }]
-          : base.definitions
-        : []
-
-  while (defs.length < base.definitions.length) {
-    defs.push({ text: '' })
+  const base = emptyCardDraft(template)
+  const examples = [...data.examples]
+  while (examples.length < base.data.examples.length) {
+    examples.push({ sentence: '' })
   }
 
   return {
     data: {
       ...data,
+      input: cardInput(data),
       examples: examples.slice(0, Math.max(examples.length, base.data.examples.length)),
     },
-    definitions: defs.slice(0, Math.max(defs.length, base.definitions.length)),
-    customSlots: {},
   }
 }
 
@@ -77,23 +71,7 @@ export function savedCardToDraft(card: SavedCard, template: CardTemplate): CardD
 }
 
 export function draftToTemplateValues(draft: CardDraft, template: CardTemplate): TemplateFieldValues {
-  const values = cardDataToTemplateValues(draft.data, template)
-
-  draft.definitions.forEach((def, i) => {
-    const index = i + 1
-    if (def.text.trim()) values[`definition_${index}`] = def.text
-    if (def.translation?.trim()) values[`definition_translation_${index}`] = def.translation
-  })
-
-  for (const [fieldId, slots] of Object.entries(draft.customSlots)) {
-    slots.forEach((text, i) => {
-      if (!text.trim()) return
-      const key = slots.length === 1 ? fieldId : `${fieldId}_${i + 1}`
-      values[key] = text
-    })
-  }
-
-  return values
+  return cardDataToTemplateValues(draft.data, template)
 }
 
 export function draftToFrontBack(template: CardTemplate, draft: CardDraft) {
@@ -101,5 +79,16 @@ export function draftToFrontBack(template: CardTemplate, draft: CardDraft) {
 }
 
 export function draftToCardData(template: CardTemplate, draft: CardDraft): GeneratedCardData {
-  return templateValuesToCardData(template, draftToTemplateValues(draft, template))
+  const fromValues = templateValuesToCardData(template, draftToTemplateValues(draft, template))
+  const merged: GeneratedCardData = {
+    ...fromValues,
+    pronunciations: draft.data.pronunciations ?? fromValues.pronunciations,
+    partOfSpeech: draft.data.partOfSpeech ?? fromValues.partOfSpeech,
+    translation: fromValues.translation ?? draft.data.translation,
+    input: cardInput(draft.data) || fromValues.input,
+  }
+  if (!templateHasExamplesField(template)) {
+    merged.examples = []
+  }
+  return merged
 }

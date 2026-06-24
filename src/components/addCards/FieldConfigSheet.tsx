@@ -1,17 +1,14 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type {
-  CustomFieldConfig,
-  DefinitionFieldConfig,
-  ExamplesFieldConfig,
-  TemplateFieldDef,
-} from '@/types/deckProfile'
+import { SelectField } from '@/components/ui/SelectField'
+import { EXAMPLE_COUNT_OPTIONS } from '@/constants/formOptions'
+import type { ExamplesFieldConfig, PronunciationsFieldConfig, TemplateFieldDef } from '@/types/deckProfile'
 import {
-  getCustomConfig,
-  getDefinitionConfig,
   getExamplesConfig,
+  getPronunciationsConfig,
   resolveFieldKind,
 } from '@/domain/expandTemplateFields'
+import { normalizePronunciationSource } from '@/domain/pronunciations'
 
 type FieldConfigSheetProps = {
   field: TemplateFieldDef
@@ -21,10 +18,14 @@ type FieldConfigSheetProps = {
 
 const panelClass =
   'w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-surface-900'
-const selectClass =
+const inputClass =
   'h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-[14px] outline-none focus:border-accent dark:border-slate-700 dark:bg-slate-800/60'
-const inputClass = selectClass
 const labelClass = 'mb-1.5 block text-[13px] font-medium text-slate-600 dark:text-slate-400'
+
+const EXAMPLE_COUNT_SELECT_OPTIONS = EXAMPLE_COUNT_OPTIONS.map((n) => ({
+  value: String(n),
+  label: String(n),
+}))
 
 function ToggleRow({
   label,
@@ -59,45 +60,6 @@ function ToggleRow({
   )
 }
 
-function clampCount(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min
-  return Math.min(max, Math.max(min, Math.round(value)))
-}
-
-function LimitedCountInput({
-  value,
-  min,
-  max,
-  onChange,
-}: {
-  value: number
-  min: number
-  max: number
-  onChange: (count: number) => void
-}) {
-  return (
-    <input
-      type="number"
-      inputMode="numeric"
-      min={min}
-      max={max}
-      step={1}
-      value={value}
-      onChange={(e) => {
-        const parsed = Number.parseInt(e.target.value, 10)
-        if (e.target.value === '') return
-        onChange(clampCount(parsed, min, max))
-      }}
-      onBlur={(e) => {
-        const parsed = Number.parseInt(e.target.value, 10)
-        onChange(clampCount(parsed, min, max))
-      }}
-      className={inputClass}
-      aria-label={`Count (${min}–${max})`}
-    />
-  )
-}
-
 function RepeatableConfigForm({
   config,
   onChange,
@@ -107,17 +69,16 @@ function RepeatableConfigForm({
 }) {
   return (
     <div className="space-y-4">
-      <label className="block">
-        <span className={labelClass}>Count</span>
-        <LimitedCountInput
-          value={config.count}
-          min={1}
-          max={5}
-          onChange={(count) =>
-            onChange({ ...config, count: count as ExamplesFieldConfig['count'] })
-          }
-        />
-      </label>
+      <SelectField
+        id="examples-field-count"
+        label="Count"
+        options={EXAMPLE_COUNT_SELECT_OPTIONS}
+        value={String(config.count)}
+        onChange={(e) => {
+          const count = Number.parseInt(e.target.value, 10) as ExamplesFieldConfig['count']
+          onChange({ ...config, count })
+        }}
+      />
       <ToggleRow
         label="Include Translation"
         checked={config.includeTranslation}
@@ -132,28 +93,77 @@ function RepeatableConfigForm({
   )
 }
 
-function ModeSelect<T extends string>({
-  label,
-  value,
-  options,
+function PronunciationsSourcesForm({
+  config,
   onChange,
 }: {
-  label: string
-  value: T
-  options: { value: T; label: string }[]
-  onChange: (v: T) => void
+  config: PronunciationsFieldConfig
+  onChange: (c: PronunciationsFieldConfig) => void
 }) {
+  const [draft, setDraft] = useState('')
+
+  const addSource = () => {
+    const next = normalizePronunciationSource(draft)
+    if (!next) return
+    if (config.sources.includes(next)) {
+      setDraft('')
+      return
+    }
+    onChange({ sources: [...config.sources, next] })
+    setDraft('')
+  }
+
+  const removeSource = (source: string) => {
+    onChange({ sources: config.sources.filter((s) => s !== source) })
+  }
+
   return (
-    <label className="block">
-      <span className={labelClass}>{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value as T)} className={selectClass}>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
+    <div className="space-y-4">
+      <p className="text-[12px] text-slate-500">
+        Choose which pronunciation sources to request during generation (e.g. us, br).
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {config.sources.map((source) => (
+          <span
+            key={source}
+            className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-[13px] font-semibold uppercase text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          >
+            {source}
+            <button
+              type="button"
+              onClick={() => removeSource(source)}
+              className="ml-0.5 text-slate-400 hover:text-red-500"
+              aria-label={`Remove ${source}`}
+            >
+              ×
+            </button>
+          </span>
         ))}
-      </select>
-    </label>
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="e.g. us"
+          className={inputClass}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              addSource()
+            }
+          }}
+        />
+        <button
+          type="button"
+          onClick={addSource}
+          disabled={!draft.trim()}
+          className="h-11 shrink-0 rounded-xl bg-accent px-4 text-[13px] font-semibold text-white disabled:opacity-40"
+        >
+          Add
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -170,11 +180,6 @@ export function FieldConfigSheet({ field, onChange, onClose }: FieldConfigSheetP
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
   }, [onClose])
-
-  const patchCustom = (patch: Partial<CustomFieldConfig>) => {
-    const cfg = getCustomConfig(field)
-    onChange({ ...cfg, ...patch })
-  }
 
   const closeFromBackdrop = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -220,68 +225,15 @@ export function FieldConfigSheet({ field, onChange, onClose }: FieldConfigSheetP
           />
         ) : null}
 
-        {kind === 'definition' ? (
-          <RepeatableConfigForm
-            config={getDefinitionConfig(field)}
-            onChange={(c) => onChange(c satisfies DefinitionFieldConfig)}
+        {kind === 'pronunciations' ? (
+          <PronunciationsSourcesForm
+            config={getPronunciationsConfig(field)}
+            onChange={(c) => onChange(c)}
           />
         ) : null}
 
-        {kind === 'custom' ? (
-          <div className="space-y-4">
-            <label className="block">
-              <span className={labelClass}>Field Name</span>
-              <input
-                type="text"
-                value={getCustomConfig(field).name}
-                onChange={(e) => patchCustom({ name: e.target.value })}
-                className={inputClass}
-              />
-            </label>
-            <ModeSelect
-              label="Field Type"
-              value={getCustomConfig(field).fieldType}
-              options={[
-                { value: 'text', label: 'Text' },
-                { value: 'editableText', label: 'Editable Text' },
-                { value: 'image', label: 'Image' },
-                { value: 'audio', label: 'Audio' },
-                { value: 'video', label: 'Video' },
-              ]}
-              onChange={(fieldType) => patchCustom({ fieldType })}
-            />
-            {getCustomConfig(field).fieldType === 'audio' ? (
-              <ModeSelect
-                label="Audio"
-                value={getCustomConfig(field).audioSource ?? 'upload'}
-                options={[
-                  { value: 'upload', label: 'Upload File' },
-                  { value: 'record', label: 'Record Audio' },
-                ]}
-                onChange={(audioSource) => patchCustom({ audioSource })}
-              />
-            ) : null}
-            {getCustomConfig(field).fieldType === 'video' ? (
-              <ModeSelect
-                label="Video"
-                value={getCustomConfig(field).videoSource ?? 'upload'}
-                options={[
-                  { value: 'upload', label: 'Upload File' },
-                  { value: 'record', label: 'Record Video' },
-                ]}
-                onChange={(videoSource) => patchCustom({ videoSource })}
-              />
-            ) : null}
-            <label className="block">
-              <span className={labelClass}>Count</span>
-              <LimitedCountInput
-                value={getCustomConfig(field).count}
-                min={1}
-                max={10}
-                onChange={(count) => patchCustom({ count })}
-              />
-            </label>
-          </div>
+        {kind !== 'examples' && kind !== 'pronunciations' ? (
+          <p className="text-[13px] text-slate-500">No configuration for this field.</p>
         ) : null}
 
         <button

@@ -2,12 +2,15 @@ import { create } from 'zustand'
 import { getActiveDeck, resolveActiveDeckId } from '@/store/library/activeDeck'
 import { storage } from '@/storage/adapter'
 import { bootstrapLibraryDecks } from '@/storage/seed'
+import { migrateMissingCardTemplateSnapshots } from '@/domain/cardTemplateSnapshotMigration'
+import { migrateLibraryTemplateIdsInStorage } from '@/storage/migrateLibraryTemplateIds'
 import { persistCommitToDeck } from '@/store/library/commitCards'
 import {
   createDeckInStorage,
   deleteDeckInStorage,
   renameDeckInStorage,
   updateDeckSettingsInStorage,
+  updateDeckDefaultTemplateInStorage,
   type DeleteDeckMode,
 } from '@/store/library/deckManagement'
 import type {
@@ -36,6 +39,7 @@ type LibraryActions = {
   setActiveDeckId: (deckId: string) => Promise<void>
   createDeck: (params: CreateDeckParams) => Promise<Deck>
   updateDeckSettings: (deckId: string, settings: DeckSettings) => Promise<void>
+  updateDeckDefaultTemplate: (deckId: string, defaultTemplateId: string) => Promise<void>
   renameDeck: (deckId: string, name: string) => Promise<void>
   deleteDeck: (deckId: string, mode: DeleteDeckMode) => Promise<void>
 }
@@ -47,6 +51,8 @@ async function loadLibrary(): Promise<{
   cards: SavedCard[]
   activeDeckId: string | null
 }> {
+  await migrateLibraryTemplateIdsInStorage()
+  await migrateMissingCardTemplateSnapshots()
   const decks = await bootstrapLibraryDecks()
   const cards = await storage.cards.getAll()
   const settings = await storage.settings.get()
@@ -133,6 +139,12 @@ export const useLibraryStore = create<LibraryStore>((set, get) => ({
 
   updateDeckSettings: async (deckId, settings) => {
     await updateDeckSettingsInStorage(deckId, settings)
+    const { decks, cards, activeDeckId } = await loadLibrary()
+    set({ decks, cards, activeDeckId })
+  },
+
+  updateDeckDefaultTemplate: async (deckId, defaultTemplateId) => {
+    await updateDeckDefaultTemplateInStorage(deckId, defaultTemplateId)
     const { decks, cards, activeDeckId } = await loadLibrary()
     set({ decks, cards, activeDeckId })
   },

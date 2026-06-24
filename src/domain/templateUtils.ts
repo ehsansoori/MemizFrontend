@@ -1,180 +1,130 @@
 import type { GeneratedCardData } from '@/types/cards'
-import type { CardTemplate, TemplateFieldDef } from '@/types/deckProfile'
-import { isBasicTemplate } from '@/domain/cardTemplates'
+import type { CardTemplate } from '@/types/deckProfile'
 import {
-  getExamplesConfig,
-  resolveFieldKind,
-} from '@/domain/expandTemplateFields'
-import {
-  formatRepeatableGroupForDisplay,
-  formatSimpleGroupForDisplay,
-  getTemplateFormGroups,
-  readRepeatableItems,
-  type RepeatableFormGroup,
-} from '@/domain/templateFormGroups'
+  exampleSentence,
+  normalizeGeneratedCardData,
+} from '@/domain/languageCardData'
+import { formatPronunciationsForDisplay, parsePronunciationsFromText } from '@/domain/pronunciations'
+import { getExamplesConfig, getPronunciationsConfig, resolveFieldKind } from '@/domain/expandTemplateFields'
+import { getReviewBackBlocks, getTemplateCardBlocks } from '@/domain/templateCardBlocks'
 
 export type TemplateFieldValues = Record<string, string>
-
-const EXAMPLE_KEY = /^example_(\d+)$/
-
-export function isExampleField(field: TemplateFieldDef): boolean {
-  return EXAMPLE_KEY.test(field.key) || field.key === 'examples'
-}
-
-export function isExampleTranslationField(field: TemplateFieldDef): boolean {
-  return /^example_translation_(\d+)$/.test(field.key) || field.key === 'exampleTranslation'
-}
 
 export function countTemplateExamples(template: CardTemplate): number {
   const examplesField = template.fields.find((f) => resolveFieldKind(f) === 'examples')
   if (examplesField) return getExamplesConfig(examplesField).count
+  return 0
+}
 
-  const numbered = template.fields.filter((f) => EXAMPLE_KEY.test(f.key)).length
-  if (numbered > 0) return numbered
-  return template.fields.some((f) => f.key === 'examples') ? 1 : 0
+export function templateHasExamplesField(template: CardTemplate): boolean {
+  return template.fields.some((f) => resolveFieldKind(f) === 'examples')
+}
+
+/** True when the template renders an examples block on the card back. */
+export function templateExpectsExamplesOnBack(template: CardTemplate): boolean {
+  if (!templateHasExamplesField(template)) return false
+  return getReviewBackBlocks(template).some((block) => block.type === 'examples')
+}
+
+/** Drop fields removed from the template so stale persisted data does not surface in UI. */
+export function alignCardDataToTemplate(
+  template: CardTemplate,
+  data: GeneratedCardData,
+): GeneratedCardData {
+  const normalized = normalizeGeneratedCardData(data)
+  if (templateHasExamplesField(template)) return normalized
+  return { ...normalized, examples: [] }
 }
 
 export function templateIncludesExampleTranslations(template: CardTemplate): boolean {
   const examplesField = template.fields.find((f) => resolveFieldKind(f) === 'examples')
   if (examplesField) return getExamplesConfig(examplesField).includeTranslation
-  return template.fields.some(isExampleTranslationField)
+  return false
 }
 
-function repeatableGroups(template: CardTemplate, valuePrefix: string): RepeatableFormGroup[] {
-  return getTemplateFormGroups(template.fields).filter(
-    (g): g is RepeatableFormGroup =>
-      g.type === 'repeatable' && g.valuePrefix === valuePrefix,
-  )
+export function templateHasPartOfSpeech(template: CardTemplate): boolean {
+  return template.fields.some((f) => resolveFieldKind(f) === 'partOfSpeech')
 }
 
-function readRepeatableExamples(
-  values: TemplateFieldValues,
-  group: RepeatableFormGroup,
-): GeneratedCardData['examples'] {
-  return readRepeatableItems(values, group)
-    .filter((item) => item.text.trim())
-    .map((item) => ({
-      text: item.text.trim(),
-      translation: item.translation?.trim() || undefined,
-    }))
+export function templateHasPronunciations(template: CardTemplate): boolean {
+  return template.fields.some((f) => resolveFieldKind(f) === 'pronunciations')
 }
 
-export function templateValuesToExamples(
+export function getTemplatePronunciationSources(
   template: CardTemplate,
-  values: TemplateFieldValues,
-): GeneratedCardData['examples'] {
-  const groups = repeatableGroups(template, 'example')
-  if (groups.length > 0) {
-    return groups.flatMap((group) => readRepeatableExamples(values, group))
-  }
-
-  const legacy = values.examples?.trim()
-  if (legacy) {
-    return [{ text: legacy, translation: values.exampleTranslation?.trim() || undefined }]
-  }
-
-  return []
+  sourceLanguage?: string,
+): string[] {
+  const field = template.fields.find((f) => resolveFieldKind(f) === 'pronunciations')
+  if (!field) return []
+  return getPronunciationsConfig(field, sourceLanguage).sources
 }
 
-export function templateValuesToDefinitions(
-  template: CardTemplate,
-  values: TemplateFieldValues,
-): GeneratedCardData['examples'] {
-  const groups = repeatableGroups(template, 'definition')
-  return groups.flatMap((group) => readRepeatableExamples(values, group))
+export function templateHasTranslation(template: CardTemplate): boolean {
+  return template.fields.some((f) => resolveFieldKind(f) === 'translation')
 }
 
 export function cardDataToTemplateValues(
   data: GeneratedCardData,
   template: CardTemplate,
 ): TemplateFieldValues {
+  const normalized = alignCardDataToTemplate(template, data)
   const values: TemplateFieldValues = {
-    front: data.word,
-    word: data.word,
-    back: [data.targetMeaning, data.englishMeaning].filter(Boolean).join('\n'),
-    meaning: data.targetMeaning ?? '',
-    targetMeaning: data.targetMeaning ?? '',
-    englishMeaning: data.englishMeaning ?? '',
-    phonetic: data.phonetic ?? '',
-    partOfSpeech: data.partOfSpeech ?? '',
-    notes: data.notes ?? '',
-    definition: data.targetMeaning ?? '',
-    answer: data.targetMeaning ?? '',
-    explanation: data.notes ?? '',
+    input: normalized.input,
+    translation: normalized.translation ?? '',
+    pronunciations: formatPronunciationsForDisplay(normalized.pronunciations ?? []),
+    partOfSpeech: (normalized.partOfSpeech ?? []).join(', '),
   }
 
-  data.examples.forEach((ex, i) => {
+  if (!templateHasExamplesField(template)) return values
+
+  normalized.examples.forEach((ex, i) => {
     const index = i + 1
-    values[`example_${index}`] = ex.text
-    if (ex.translation) {
-      values[`example_translation_${index}`] = ex.translation
-    }
+    values[`example_${index}`] = exampleSentence(ex)
+    if (ex.translation) values[`example_translation_${index}`] = ex.translation
   })
 
-  if (repeatableGroups(template, 'example').length === 0 && data.examples.length > 0) {
-    values.examples = data.examples.map((e) => e.text).join('\n')
-    values.exampleTranslation = data.examples
-      .map((e) => e.translation)
-      .filter(Boolean)
-      .join('\n')
-  }
-
-  if (repeatableGroups(template, 'definition').length > 0 && data.englishMeaning) {
-    values.definition_1 = data.englishMeaning
-  } else if (data.englishMeaning) {
-    values.definition = data.englishMeaning
-  }
-
   return values
-}
-
-export function templateHasPartOfSpeech(template: CardTemplate): boolean {
-  return template.fields.some(
-    (f) =>
-      resolveFieldKind(f) === 'tag' ||
-      f.key.startsWith('part_of_speech') ||
-      f.label.toLowerCase().includes('part of speech'),
-  )
 }
 
 export function templateValuesToFrontBack(
   template: CardTemplate,
   values: TemplateFieldValues,
 ): { front: string; back: string } {
-  if (isBasicTemplate(template)) {
-    const front = values.word?.trim() ?? values.front?.trim() ?? ''
-    const back = values.targetMeaning?.trim() ?? values.meaning?.trim() ?? values.back?.trim() ?? ''
-    return { front, back }
-  }
-
-  const groups = getTemplateFormGroups(template.fields)
+  const { front, back } = getTemplateCardBlocks(template)
   const frontParts: string[] = []
   const backParts: string[] = []
 
-  for (const group of groups) {
-    if (group.type === 'repeatable') {
-      const block = formatRepeatableGroupForDisplay(group, values)
-      if (!block) continue
-      if (group.side === 'front') frontParts.push(block)
-      else backParts.push(block)
+  for (const block of front) {
+    if (block.type === 'simple' && block.patchKey === 'input') {
+      const text = values.input?.trim()
+      if (text) frontParts.push(text)
+    }
+  }
+
+  for (const block of back) {
+    if (block.type === 'simple') {
+      const text = values[block.patchKey]?.trim()
+      if (text) backParts.push(text)
       continue
     }
-
-    const text = formatSimpleGroupForDisplay(group, values)
-    if (!text) continue
-
-    if (group.side === 'front') {
-      frontParts.push(group.valueKey === 'word' ? text : `${group.label}\n${text}`)
-    } else if (group.valueKey === 'targetMeaning') {
-      backParts.push(text)
-    } else {
-      backParts.push(`${group.label}\n${text}`)
+    if (block.type === 'pronunciations') {
+      const text = values.pronunciations?.trim()
+      if (text) backParts.push(text)
+      continue
+    }
+    if (block.type === 'examples') {
+      for (let i = 1; i <= block.count; i++) {
+        const sentence = values[`example_${i}`]?.trim()
+        if (!sentence) continue
+        const tr = values[`example_translation_${i}`]?.trim()
+        backParts.push(tr ? `${sentence}\n${tr}` : sentence)
+      }
     }
   }
 
   return {
-    front: frontParts.join('\n') || values.front?.trim() || values.word?.trim() || '',
-    back: backParts.join('\n\n') || values.back?.trim() || values.targetMeaning?.trim() || '',
+    front: frontParts.join('\n') || values.input?.trim() || '',
+    back: backParts.join('\n\n'),
   }
 }
 
@@ -183,21 +133,56 @@ export function templateValuesToCardData(
   values: TemplateFieldValues,
 ): GeneratedCardData {
   const { front, back } = templateValuesToFrontBack(template, values)
-  const definitions = templateValuesToDefinitions(template, values)
-  const firstDefinition = definitions[0]
+  const examplesField = template.fields.find((f) => resolveFieldKind(f) === 'examples')
+  const exampleCount = examplesField ? getExamplesConfig(examplesField).count : 0
+  const includeTranslation = examplesField
+    ? getExamplesConfig(examplesField).includeTranslation
+    : false
+
+  const examples = Array.from({ length: exampleCount }, (_, i) => {
+    const index = i + 1
+    const sentence = values[`example_${index}`]?.trim() ?? ''
+    const translation = includeTranslation
+      ? values[`example_translation_${index}`]?.trim() || undefined
+      : undefined
+    return { sentence, translation }
+  }).filter((ex) => ex.sentence || ex.translation)
+
+  const posParts = values.partOfSpeech?.split(/\s*[,·]\s*/).filter(Boolean)
+  const parsedPronunciations = parsePronunciationsFromText(values.pronunciations ?? '')
 
   return {
-    word: values.word ?? front.split('\n')[0] ?? front,
-    targetMeaning: values.targetMeaning ?? values.meaning ?? back,
-    englishMeaning:
-      values.englishMeaning ??
-      firstDefinition?.translation ??
-      firstDefinition?.text ??
-      values.definition ??
-      values.answer,
-    phonetic: values.phonetic,
-    partOfSpeech: values.partOfSpeech ?? values.part_of_speech,
-    notes: values.notes ?? values.explanation,
-    examples: templateValuesToExamples(template, values),
+    input: values.input?.trim() || front.split('\n')[0]?.trim() || '',
+    translation: values.translation?.trim() || back.split('\n')[0]?.trim() || undefined,
+    pronunciations: parsedPronunciations.length > 0 ? parsedPronunciations : undefined,
+    partOfSpeech: posParts && posParts.length > 0 ? posParts : undefined,
+    examples,
   }
+}
+
+export function templateValuesToExamples(
+  template: CardTemplate,
+  values: TemplateFieldValues,
+): GeneratedCardData['examples'] {
+  return templateValuesToCardData(template, values).examples
+}
+
+/** @deprecated */
+export function isBasicTemplate(_template: CardTemplate): boolean {
+  return true
+}
+
+/** @deprecated */
+export function isExampleField(): boolean {
+  return false
+}
+
+/** @deprecated */
+export function isExampleTranslationField(): boolean {
+  return false
+}
+
+/** @deprecated */
+export function templateValuesToDefinitions(): GeneratedCardData['examples'] {
+  return []
 }

@@ -1,44 +1,27 @@
-import type {
-  CustomFieldConfig,
-  DefinitionFieldConfig,
-  ExamplesFieldConfig,
-  TemplateFieldDef,
-  TemplateFieldKind,
-  TemplateFieldSide,
-  TemplateFieldType,
-} from '@/types/deckProfile'
+import type { ExamplesFieldConfig, TemplateFieldDef, TemplateFieldSide } from '@/types/deckProfile'
+import { DEFAULT_ENGLISH_PRONUNCIATION_SOURCES } from '@/domain/pronunciations'
 
 export type BuilderPresetId =
-  | 'word'
-  | 'meaning'
-  | 'pronunciation'
-  | 'pronunciation_audio'
+  | 'input'
+  | 'translation'
+  | 'pronunciations'
   | 'part_of_speech'
-  | 'note'
-  | 'image'
-  | 'definition'
   | 'examples'
-  | 'custom'
 
 export const BUILDER_PRESETS: { id: BuilderPresetId; label: string; defaultSide: TemplateFieldSide }[] =
   [
-    { id: 'word', label: 'Word', defaultSide: 'front' },
-    { id: 'meaning', label: 'Meaning', defaultSide: 'back' },
-    { id: 'pronunciation', label: 'Pronunciation', defaultSide: 'front' },
-    { id: 'pronunciation_audio', label: 'Pronunciation Audio', defaultSide: 'front' },
+    { id: 'input', label: 'Input', defaultSide: 'front' },
+    { id: 'translation', label: 'Translation', defaultSide: 'back' },
+    { id: 'pronunciations', label: 'Pronunciations', defaultSide: 'back' },
     { id: 'part_of_speech', label: 'Part Of Speech', defaultSide: 'back' },
-    { id: 'note', label: 'Note', defaultSide: 'back' },
-    { id: 'image', label: 'Image', defaultSide: 'back' },
-    { id: 'definition', label: 'Definition', defaultSide: 'back' },
     { id: 'examples', label: 'Examples', defaultSide: 'back' },
-    { id: 'custom', label: 'Custom Field', defaultSide: 'back' },
   ]
 
 export const FRONT_DROP_ID = 'template-drop-front'
 export const BACK_DROP_ID = 'template-drop-back'
 
-const DEFAULT_REPEATABLE_CONFIG = {
-  count: 1,
+const DEFAULT_EXAMPLES_CONFIG = {
+  count: 3,
   includeTranslation: true,
 } satisfies ExamplesFieldConfig
 
@@ -50,8 +33,7 @@ function baseField(
   key: string,
   label: string,
   side: TemplateFieldSide,
-  fieldKind: TemplateFieldKind,
-  fieldType?: TemplateFieldType,
+  fieldKind: TemplateFieldDef['fieldKind'],
   config?: TemplateFieldDef['config'],
 ): TemplateFieldDef {
   const id = fieldId()
@@ -61,7 +43,6 @@ function baseField(
     label,
     side,
     fieldKind,
-    fieldType,
     config,
   }
 }
@@ -69,44 +50,22 @@ function baseField(
 export function createPresetField(
   preset: BuilderPresetId,
   side: TemplateFieldSide,
-  custom?: CustomFieldConfig,
 ): TemplateFieldDef | null {
   switch (preset) {
-    case 'word':
-      return baseField('word', 'Word', side, 'text', 'text')
-    case 'meaning':
-      return baseField('meaning', 'Meaning', side, 'longText', 'longText')
-    case 'pronunciation':
-      return baseField('phonetic', 'Pronunciation', side, 'text', 'text')
-    case 'pronunciation_audio':
-      return baseField('pronunciation_audio', 'Pronunciation Audio', side, 'audio', 'audio')
+    case 'input':
+      return baseField('input', 'Input', side, 'input')
+    case 'translation':
+      return baseField('translation', 'Translation', side, 'translation')
+    case 'pronunciations':
+      return baseField('pronunciations', 'Pronunciations', side, 'pronunciations', {
+        sources: [...DEFAULT_ENGLISH_PRONUNCIATION_SOURCES],
+      })
     case 'part_of_speech':
-      return baseField('part_of_speech', 'Part Of Speech', side, 'tag', 'tag')
-    case 'note':
-      return baseField('note', 'Note', side, 'longText', 'longText')
-    case 'image':
-      return baseField('image', 'Image', side, 'image', 'image')
-    case 'definition':
-      return baseField('definition', 'Definition', side, 'definition', 'longText', {
-        ...DEFAULT_REPEATABLE_CONFIG,
-      } satisfies DefinitionFieldConfig)
+      return baseField('partOfSpeech', 'Part Of Speech', side, 'partOfSpeech')
     case 'examples':
-      return baseField('examples', 'Examples', side, 'examples', 'longText', {
-        ...DEFAULT_REPEATABLE_CONFIG,
-      } satisfies ExamplesFieldConfig)
-    case 'custom':
-      return baseField(
-        'custom',
-        custom?.name ?? 'Custom Field',
-        side,
-        'custom',
-        'text',
-        custom ?? {
-          name: 'Custom Field',
-          fieldType: 'editableText',
-          count: 1,
-        },
-      )
+      return baseField('examples', 'Examples', side, 'examples', {
+        ...DEFAULT_EXAMPLES_CONFIG,
+      })
     default:
       return null
   }
@@ -116,11 +75,95 @@ export function fieldsForSide(fields: TemplateFieldDef[], side: TemplateFieldSid
   return fields.filter((f) => f.side === side)
 }
 
+export function fieldPresetId(field: TemplateFieldDef): BuilderPresetId | null {
+  const kind = field.fieldKind
+  if (kind === 'input' || field.key.startsWith('input')) return 'input'
+  if (kind === 'translation' || field.key.startsWith('translation')) return 'translation'
+  if (kind === 'pronunciations' || field.key.startsWith('pronunciations')) return 'pronunciations'
+  if (kind === 'partOfSpeech' || field.key.startsWith('partOfSpeech')) return 'part_of_speech'
+  if (kind === 'examples' || field.key.startsWith('example')) return 'examples'
+  return null
+}
+
+export function presetUsedOnSide(
+  fields: TemplateFieldDef[],
+  side: TemplateFieldSide,
+  preset: BuilderPresetId,
+  excludeFieldId?: string,
+): boolean {
+  return fieldsForSide(fields, side)
+    .filter((field) => field.id !== excludeFieldId)
+    .some((field) => fieldPresetId(field) === preset)
+}
+
+export function dedupeTemplateFieldsByPreset(fields: TemplateFieldDef[]): TemplateFieldDef[] {
+  const keptByPreset = new Map<BuilderPresetId, TemplateFieldDef>()
+  for (const field of fields) {
+    const preset = fieldPresetId(field)
+    if (!preset) continue
+    const existing = keptByPreset.get(preset)
+    if (!existing) {
+      keptByPreset.set(preset, field)
+      continue
+    }
+    if (field.side === 'front' && existing.side === 'back') {
+      keptByPreset.set(preset, field)
+    }
+  }
+  const keptIds = new Set([...keptByPreset.values()].map((field) => field.id))
+  return fields.filter((field) => {
+    const preset = fieldPresetId(field)
+    if (!preset) return true
+    return keptIds.has(field.id)
+  })
+}
+
+export function presetUsedInTemplate(
+  fields: TemplateFieldDef[],
+  preset: BuilderPresetId,
+  excludeFieldId?: string,
+): boolean {
+  return fields
+    .filter((field) => field.id !== excludeFieldId)
+    .some((field) => fieldPresetId(field) === preset)
+}
+
+export function canAddPresetToSide(
+  fields: TemplateFieldDef[],
+  _side: TemplateFieldSide,
+  preset: BuilderPresetId,
+): boolean {
+  return !presetUsedInTemplate(fields, preset)
+}
+
+export function canMoveFieldToSide(
+  fields: TemplateFieldDef[],
+  fieldId: string,
+  targetSide: TemplateFieldSide,
+): boolean {
+  const field = fields.find((f) => f.id === fieldId)
+  if (!field || field.side === targetSide) return true
+  const preset = fieldPresetId(field)
+  if (!preset) return true
+  return !presetUsedOnSide(fields, targetSide, preset, fieldId)
+}
+
+export function availablePresetsForSide(
+  fields: TemplateFieldDef[],
+  side: TemplateFieldSide,
+): BuilderPresetId[] {
+  return BUILDER_PRESETS.filter((preset) => canAddPresetToSide(fields, side, preset.id)).map(
+    (preset) => preset.id,
+  )
+}
+
 export function appendFieldToSide(
   fields: TemplateFieldDef[],
   field: TemplateFieldDef,
   side: TemplateFieldSide,
 ): TemplateFieldDef[] {
+  const preset = fieldPresetId(field)
+  if (preset && !canAddPresetToSide(fields, side, preset)) return fields
   const front = fieldsForSide(fields, 'front')
   const back = fieldsForSide(fields, 'back')
   return side === 'front' ? [...front, field, ...back] : [...front, ...back, field]
@@ -151,6 +194,7 @@ export function moveFieldToSide(
 ): TemplateFieldDef[] {
   const field = fields.find((f) => f.id === fieldId)
   if (!field) return fields
+  if (!canMoveFieldToSide(fields, fieldId, targetSide)) return fields
   const without = fields.filter((f) => f.id !== fieldId)
   const moved = { ...field, side: targetSide }
   const targetSideFields = fieldsForSide(without, targetSide)
@@ -179,7 +223,17 @@ export function moveFieldToSide(
 }
 
 export function createDefaultBuilderFields(): TemplateFieldDef[] {
-  return [createPresetField('word', 'front')!, createPresetField('meaning', 'back')!]
+  return createCanonicalBasicLanguageFieldsFromPresets()
+}
+
+function createCanonicalBasicLanguageFieldsFromPresets(): TemplateFieldDef[] {
+  return [
+    createPresetField('input', 'front')!,
+    createPresetField('pronunciations', 'back')!,
+    createPresetField('translation', 'back')!,
+    createPresetField('part_of_speech', 'back')!,
+    createPresetField('examples', 'back')!,
+  ]
 }
 
 export const DEFAULT_BUILDER_FIELDS: TemplateFieldDef[] = createDefaultBuilderFields()

@@ -1,5 +1,6 @@
 import { normalizeStudyProgress } from '@/domain/studyProgress'
-import { BASIC_TEMPLATE_ID } from '@/domain/cardTemplates'
+import { normalizeTemplateId } from '@/domain/migrateTemplateIds'
+import { BASIC_TEMPLATE_ID } from '@/domain/templateIds'
 import type { Deck, SavedCard } from '@/types/cards'
 import type { StoredAppSettings, StoredCard, StoredDeck, SyncStatus } from '@/storage/types'
 
@@ -24,7 +25,8 @@ export function deckToStored(deck: Deck, syncStatus: SyncStatus = 'pending'): St
 }
 
 export function storedToDeck(row: StoredDeck): Deck {
-  const defaultTemplateId = row.defaultTemplateId ?? row.templateId
+  const defaultTemplateId = normalizeTemplateId(row.defaultTemplateId ?? row.templateId)
+  const templateId = normalizeTemplateId(row.templateId ?? row.defaultTemplateId)
   return {
     id: row.id,
     name: row.name,
@@ -33,7 +35,7 @@ export function storedToDeck(row: StoredDeck): Deck {
     lastUsedAt: row.lastUsedAt,
     deckTypeId: row.deckTypeId,
     defaultTemplateId,
-    templateId: defaultTemplateId,
+    templateId,
     settings: row.settings,
   }
 }
@@ -48,6 +50,9 @@ export function savedCardToStored(
     deckId: card.deckId,
     originalGeneratedCardId: card.originalGeneratedCardId,
     templateId: card.templateId,
+    templateSnapshot: card.templateSnapshot,
+    lastGeneratedAt: card.lastGeneratedAt,
+    lastGeneratedModelVersion: card.lastGeneratedModelVersion,
     front: card.front,
     back: card.back,
     data: card.data,
@@ -66,7 +71,10 @@ export function storedToSavedCard(row: StoredCard): SavedCard {
     id: row.id,
     deckId: row.deckId,
     originalGeneratedCardId: row.originalGeneratedCardId,
-    templateId: row.templateId ?? BASIC_TEMPLATE_ID,
+    templateId: normalizeTemplateId(row.templateId) || BASIC_TEMPLATE_ID,
+    templateSnapshot: row.templateSnapshot,
+    lastGeneratedAt: row.lastGeneratedAt,
+    lastGeneratedModelVersion: row.lastGeneratedModelVersion,
     front: row.front,
     back: row.back,
     data: row.data,

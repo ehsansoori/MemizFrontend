@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { TemplateOrderedFields } from '@/components/cardDisplay/TemplateOrderedFields'
-import { splitStudyDisplaySegments } from '@/domain/templateFieldDisplay'
+import { SavedCardTemplateBlocksView, SAVED_CARD_READ_VARIANT } from '@/components/cardDisplay/SavedCardTemplateBlocksView'
+import { CardActionsMenuButton } from '@/components/cards/CardActionsMenuButton'
 import type { SavedCard } from '@/types/cards'
 
 type StudyCardViewProps = {
@@ -10,49 +10,27 @@ type StudyCardViewProps = {
 }
 
 export function StudyCardView({ card, menuDisabled, onMenu }: StudyCardViewProps) {
-  const { sticky, scrollable } = splitStudyDisplaySegments(card)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const el = scrollRef.current
-    if (!el || scrollable.length === 0) return
+    if (!el) return
     el.scrollTop = 0
-  }, [card.id, scrollable.length])
+  }, [card.id])
 
   return (
-    <article className="flex h-full min-h-0 flex-col overflow-hidden">
-      <header className="shrink-0 border-b border-slate-100 bg-white pb-3 pt-0.5 dark:border-slate-800/80 dark:bg-surface-950">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <TemplateOrderedFields segments={sticky} variant="study-header" />
-          </div>
-          <button
-            type="button"
-            disabled={menuDisabled}
-            aria-label="Card actions"
-            onClick={onMenu}
-            className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 active:scale-95 disabled:opacity-40 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-          >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-              <circle cx="12" cy="5" r="1.75" />
-              <circle cx="12" cy="12" r="1.75" />
-              <circle cx="12" cy="19" r="1.75" />
-            </svg>
-          </button>
-        </div>
-      </header>
+    <article className="relative flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="absolute right-0 top-0 z-10">
+        <CardActionsMenuButton disabled={menuDisabled} onClick={onMenu} />
+      </div>
 
-      {scrollable.length > 0 ? (
-        <div
-          ref={scrollRef}
-          data-study-scroll
-          className="study-scroll-panel scrollbar-minimal min-h-0 flex-1 overflow-y-auto pb-4 pt-4 sm:pt-5"
-        >
-          <TemplateOrderedFields segments={scrollable} variant="study-body" />
-        </div>
-      ) : (
-        <div className="min-h-0 flex-1" aria-hidden />
-      )}
+      <div
+        ref={scrollRef}
+        data-study-scroll
+        className="study-scroll-panel scrollbar-minimal min-h-0 flex-1 overflow-y-auto pb-4 pr-10 pt-1 sm:pt-2"
+      >
+        <SavedCardTemplateBlocksView card={card} side="all" variant={SAVED_CARD_READ_VARIANT} />
+      </div>
     </article>
   )
 }

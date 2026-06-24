@@ -5,7 +5,6 @@ import {
 import type { Deck } from '@/types/cards'
 import type { CardTemplate, DeckSettings, LanguageDeckSettings } from '@/types/deckProfile'
 import { deckTypeSupportsLanguageSettings } from '@/domain/deckTypes'
-import { BASIC_TEMPLATE_ID } from '@/domain/cardTemplates'
 import { templateToGenerationOptions } from '@/domain/templateGeneration'
 
 export const DEFAULT_AUDIO_PROVIDER = 'system'
@@ -53,6 +52,4 @@ export function languageSettingsToGenerationOptions(
   return templateToGenerationOptions(template, lang)
 }
 
-export function defaultTemplateIdForDeckType(): string {
-  return BASIC_TEMPLATE_ID
-}
+export { defaultTemplateIdForDeckType } from '@/domain/templateDeckTypes'

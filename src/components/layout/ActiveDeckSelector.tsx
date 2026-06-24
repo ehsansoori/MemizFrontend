@@ -8,6 +8,8 @@ type ActiveDeckSelectorProps = {
   className?: string
   /** Lock to a specific deck (read-only, no dropdown). */
   fixedDeckId?: string
+  /** Return false to cancel deck change (e.g. unsaved generated content). */
+  onBeforeChange?: (nextDeckId: string) => boolean | Promise<boolean>
 }
 
 const fieldTriggerClass =
@@ -17,6 +19,7 @@ export function ActiveDeckSelector({
   variant = 'default',
   className,
   fixedDeckId,
+  onBeforeChange,
 }: ActiveDeckSelectorProps) {
   const decks = useLibraryStore((s) => s.decks)
   const activeDeckId = useLibraryStore((s) => s.activeDeckId)
@@ -98,8 +101,14 @@ export function ActiveDeckSelector({
                       : 'text-slate-800 dark:text-slate-200',
                   ].join(' ')}
                   onClick={() => {
-                    void setActiveDeckId(d.id)
-                    setOpen(false)
+                    void (async () => {
+                      if (onBeforeChange) {
+                        const allowed = await onBeforeChange(d.id)
+                        if (!allowed) return
+                      }
+                      await setActiveDeckId(d.id)
+                      setOpen(false)
+                    })()
                   }}
                 >
                   {d.name}

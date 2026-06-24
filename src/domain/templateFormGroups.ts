@@ -1,15 +1,6 @@
-import type {
-  CustomFieldConfig,
-  TemplateFieldDef,
-  TemplateFieldSide,
-} from '@/types/deckProfile'
+import type { TemplateFieldDef, TemplateFieldSide } from '@/types/deckProfile'
 import type { TemplateFieldValues } from '@/domain/templateUtils'
-import {
-  getCustomConfig,
-  getDefinitionConfig,
-  getExamplesConfig,
-  resolveFieldKind,
-} from '@/domain/expandTemplateFields'
+import { getExamplesConfig, resolveFieldKind } from '@/domain/expandTemplateFields'
 
 export type SimpleFormGroup = {
   type: 'simple'
@@ -37,42 +28,22 @@ export type RepeatableFormGroup = {
 export type TemplateFormGroup = SimpleFormGroup | RepeatableFormGroup
 
 export function isWordFormGroup(group: SimpleFormGroup): boolean {
-  return group.valueKey === 'word' || group.label === 'Word'
+  return group.valueKey === 'input' || group.label === 'Input'
 }
 
 function simpleValueKey(field: TemplateFieldDef): string {
-  if (field.label === 'Word' || field.key.startsWith('word')) return 'word'
-  if (field.label === 'Meaning' || field.key.startsWith('meaning')) return 'targetMeaning'
-  if (field.label === 'Pronunciation' || field.key.startsWith('phonetic')) return 'phonetic'
-  if (field.label === 'Note' || field.key.startsWith('note')) return 'notes'
-  if (field.label === 'Part Of Speech' || field.key.startsWith('part_of_speech')) return 'partOfSpeech'
+  const kind = resolveFieldKind(field)
+  if (kind === 'input') return 'input'
+  if (kind === 'translation') return 'translation'
+  if (kind === 'pronunciations') return 'pronunciations'
+  if (kind === 'partOfSpeech') return 'partOfSpeech'
   return field.key
 }
 
 function simpleInputType(field: TemplateFieldDef): SimpleFormGroup['inputType'] {
   const kind = resolveFieldKind(field)
-  const ft = field.fieldType ?? (kind === 'longText' ? 'longText' : 'text')
-  if (ft === 'longText') return 'longText'
-  if (ft === 'image') return 'image'
-  if (ft === 'audio') return 'audio'
-  if (ft === 'video') return 'video'
-  if (ft === 'tag') return 'tag'
+  if (kind === 'translation' || kind === 'pronunciations') return 'longText'
   return 'text'
-}
-
-function customInputType(cfg: CustomFieldConfig): SimpleFormGroup['inputType'] {
-  switch (cfg.fieldType) {
-    case 'editableText':
-      return 'longText'
-    case 'image':
-      return 'image'
-    case 'audio':
-      return 'audio'
-    case 'video':
-      return 'video'
-    default:
-      return 'text'
-  }
 }
 
 export function getTemplateFormGroups(fields: TemplateFieldDef[]): TemplateFormGroup[] {
@@ -93,55 +64,6 @@ export function getTemplateFormGroups(fields: TemplateFieldDef[]): TemplateFormG
           translationPrefix: 'example_translation',
           includeTranslation: cfg.includeTranslation,
           addLabel: 'Add Example',
-        },
-      ]
-    }
-
-    if (kind === 'definition') {
-      const cfg = getDefinitionConfig(field)
-      return [
-        {
-          type: 'repeatable',
-          id: field.id,
-          sourceFieldId: field.id,
-          label: field.label,
-          side: field.side,
-          itemLabel: 'Definition',
-          valuePrefix: 'definition',
-          translationPrefix: 'definition_translation',
-          includeTranslation: cfg.includeTranslation,
-          addLabel: 'Add Definition',
-        },
-      ]
-    }
-
-    if (kind === 'custom') {
-      const cfg = getCustomConfig(field)
-      if (cfg.count > 1 && cfg.fieldType !== 'text') {
-        return [
-          {
-            type: 'repeatable',
-            id: field.id,
-            sourceFieldId: field.id,
-            label: cfg.name,
-            side: field.side,
-            itemLabel: cfg.name,
-            valuePrefix: field.key,
-            translationPrefix: `${field.key}_translation`,
-            includeTranslation: false,
-            addLabel: `Add ${cfg.name}`,
-          },
-        ]
-      }
-      return [
-        {
-          type: 'simple',
-          id: field.id,
-          sourceFieldId: field.id,
-          label: cfg.name,
-          side: field.side,
-          valueKey: field.key,
-          inputType: customInputType(cfg),
         },
       ]
     }

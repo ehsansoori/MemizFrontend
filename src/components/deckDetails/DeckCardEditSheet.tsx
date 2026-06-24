@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { BottomSheet } from '@/components/decks/BottomSheet'
+import { cardInput } from '@/domain/languageCardData'
 import type { SavedCard } from '@/types/cards'
 
 export type DeckCardEditSheetProps = {
@@ -7,7 +8,7 @@ export type DeckCardEditSheetProps = {
   card: SavedCard | null
   busy?: boolean
   onClose: () => void
-  onSubmit: (card: SavedCard, values: { word: string; targetMeaning: string; englishMeaning: string }) => void
+  onSubmit: (card: SavedCard, values: { input: string; translation: string }) => void
 }
 
 export function DeckCardEditSheet({
@@ -17,30 +18,27 @@ export function DeckCardEditSheet({
   onClose,
   onSubmit,
 }: DeckCardEditSheetProps) {
-  const [word, setWord] = useState('')
-  const [targetMeaning, setTargetMeaning] = useState('')
-  const [englishMeaning, setEnglishMeaning] = useState('')
+  const [input, setInput] = useState('')
+  const [translation, setTranslation] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (open && card) {
-      setWord(card.data.word)
-      setTargetMeaning(card.data.targetMeaning ?? '')
-      setEnglishMeaning(card.data.englishMeaning ?? '')
+      setInput(cardInput(card.data))
+      setTranslation(card.data.translation ?? '')
       const t = setTimeout(() => inputRef.current?.focus(), 80)
       return () => clearTimeout(t)
     }
   }, [open, card])
 
-  const trimmedWord = word.trim()
-  const canSubmit = !busy && trimmedWord.length > 0
+  const trimmedInput = input.trim()
+  const canSubmit = !busy && trimmedInput.length > 0
 
   const submit = () => {
     if (!canSubmit || !card) return
     onSubmit(card, {
-      word: trimmedWord,
-      targetMeaning: targetMeaning.trim(),
-      englishMeaning: englishMeaning.trim(),
+      input: trimmedInput,
+      translation: translation.trim(),
     })
   }
 
@@ -57,13 +55,13 @@ export function DeckCardEditSheet({
       <div className="space-y-3 px-5 pb-5">
         <label className="block">
           <span className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
-            Word
+            Input
           </span>
           <input
             ref={inputRef}
             type="text"
-            value={word}
-            onChange={(e) => setWord(e.target.value)}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
             className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-[15px] text-slate-900 outline-none transition focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/30 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 dark:focus:bg-slate-800"
             onKeyDown={(e) => {
               if (e.key === 'Enter') submit()
@@ -72,22 +70,11 @@ export function DeckCardEditSheet({
         </label>
         <label className="block">
           <span className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
-            Target meaning
+            Translation
           </span>
           <textarea
-            value={targetMeaning}
-            onChange={(e) => setTargetMeaning(e.target.value)}
-            rows={2}
-            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[15px] text-slate-900 outline-none transition focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/30 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 dark:focus:bg-slate-800"
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-slate-400">
-            English meaning
-          </span>
-          <textarea
-            value={englishMeaning}
-            onChange={(e) => setEnglishMeaning(e.target.value)}
+            value={translation}
+            onChange={(e) => setTranslation(e.target.value)}
             rows={2}
             className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[15px] text-slate-900 outline-none transition focus:border-accent focus:bg-white focus:ring-2 focus:ring-accent/30 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 dark:focus:bg-slate-800"
           />

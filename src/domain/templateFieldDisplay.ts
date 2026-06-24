@@ -1,4 +1,4 @@
-import { resolveCardTemplate } from '@/domain/resolveDeckTemplate'
+import { resolveSavedCardTemplate } from '@/domain/resolveDeckTemplate'
 import {
   getTemplateFormGroups,
   isWordFormGroup,
@@ -8,6 +8,7 @@ import {
   type TemplateFormGroup,
 } from '@/domain/templateFormGroups'
 import { cardDataToTemplateValues } from '@/domain/templateUtils'
+import { cardInput } from '@/domain/languageCardData'
 import type { SavedCard } from '@/types/cards'
 
 export type FieldDisplayRole = 'word' | 'meaning' | 'phonetic' | 'pos' | 'notes' | 'body'
@@ -22,16 +23,9 @@ export type TemplateDisplaySegment =
 
 function resolveSimpleRole(group: SimpleFormGroup): FieldDisplayRole {
   if (isWordFormGroup(group)) return 'word'
-  if (group.valueKey === 'phonetic') return 'phonetic'
+  if (group.valueKey === 'pronunciations') return 'phonetic'
   if (group.valueKey === 'partOfSpeech') return 'pos'
-  if (
-    group.valueKey === 'targetMeaning' ||
-    group.valueKey === 'meaning' ||
-    group.valueKey === 'englishMeaning' ||
-    group.label === 'Meaning'
-  ) {
-    return 'meaning'
-  }
+  if (group.valueKey === 'translation' || group.label === 'Translation') return 'meaning'
   if (group.valueKey === 'notes' || group.label === 'Note') return 'notes'
   return 'body'
 }
@@ -60,7 +54,7 @@ export function getTemplateDisplaySegments(card: SavedCard): {
   front: TemplateDisplaySegment[]
   back: TemplateDisplaySegment[]
 } {
-  const template = resolveCardTemplate(card.templateId)
+  const template = resolveSavedCardTemplate(card)
   const values = cardDataToTemplateValues(card.data, template)
   const front: TemplateDisplaySegment[] = []
   const back: TemplateDisplaySegment[] = []
@@ -77,7 +71,7 @@ export function getTemplateDisplaySegments(card: SavedCard): {
 
 /** All populated segments in template field order. */
 export function getOrderedTemplateDisplaySegments(card: SavedCard): TemplateDisplaySegment[] {
-  const template = resolveCardTemplate(card.templateId)
+  const template = resolveSavedCardTemplate(card)
   const values = cardDataToTemplateValues(card.data, template)
   const segments: TemplateDisplaySegment[] = []
 
@@ -143,7 +137,7 @@ export function savedCardWord(card: SavedCard): string {
   const { front } = getTemplateDisplaySegments(card)
   return (
     firstSimpleText(front, 'word') ||
-    card.data.word.trim() ||
+    cardInput(card.data) ||
     firstSimpleText(front) ||
     'Untitled'
   )
@@ -157,7 +151,7 @@ export function savedCardMeaningPreview(card: SavedCard, maxLength = 64): string
     firstSimpleText(back) ||
     firstRepeatableText(back) ||
     ''
-  if (!text) return 'No meaning yet'
+  if (!text) return 'No translation yet'
   if (text.length <= maxLength) return text
   return `${text.slice(0, maxLength - 1).trimEnd()}…`
 }
@@ -166,6 +160,7 @@ export function savedCardMeaning(card: SavedCard): string {
   const { back } = getTemplateDisplaySegments(card)
   return (
     firstSimpleText(back, 'meaning') ||
+    card.data.translation?.trim() ||
     card.data.targetMeaning?.trim() ||
     card.data.englishMeaning?.trim() ||
     firstSimpleText(back) ||
@@ -181,7 +176,7 @@ export function savedCardFrontText(card: SavedCard): string {
     if (segment.kind === 'simple') parts.push(segment.text)
     else parts.push(...segment.items.map((i) => i.text))
   }
-  return parts.join('\n') || card.data.word
+  return parts.join('\n') || cardInput(card.data)
 }
 
 export function savedCardBackText(card: SavedCard): string {
@@ -196,5 +191,5 @@ export function savedCardBackText(card: SavedCard): string {
       }
     }
   }
-  return parts.join('\n\n') || savedCardMeaning(card) || 'No meaning yet'
+  return parts.join('\n\n') || savedCardMeaning(card) || 'No translation yet'
 }

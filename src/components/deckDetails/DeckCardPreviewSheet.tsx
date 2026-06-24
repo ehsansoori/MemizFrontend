@@ -1,6 +1,9 @@
-import { TemplateOrderedFields } from '@/components/cardDisplay/TemplateOrderedFields'
+import {
+  getSavedCardTemplateBlocks,
+  SavedCardTemplateBlocksView,
+} from '@/components/cardDisplay/SavedCardTemplateBlocksView'
 import { BottomSheet } from '@/components/decks/BottomSheet'
-import { getTemplateDisplaySegments, savedCardWord } from '@/domain/templateFieldDisplay'
+import { savedCardWord } from '@/domain/templateFieldDisplay'
 import type { SavedCard } from '@/types/cards'
 
 export type DeckCardPreviewSheetProps = {
@@ -18,7 +21,8 @@ export function DeckCardPreviewSheet({ open, card, onClose }: DeckCardPreviewShe
     )
   }
 
-  const { front, back } = getTemplateDisplaySegments(card)
+  const { blocks: front } = getSavedCardTemplateBlocks(card, 'front')
+  const { blocks: back } = getSavedCardTemplateBlocks(card, 'back')
 
   return (
     <BottomSheet
@@ -34,12 +38,12 @@ export function DeckCardPreviewSheet({ open, card, onClose }: DeckCardPreviewShe
       <div className="space-y-6 px-5 pb-5">
         {front.length > 0 ? (
           <section>
-            <TemplateOrderedFields segments={front} variant="preview" />
+            <SavedCardTemplateBlocksView card={card} side="front" variant="preview" />
           </section>
         ) : null}
         {back.length > 0 ? (
           <section className={front.length > 0 ? 'border-t border-slate-100 pt-5 dark:border-slate-800' : ''}>
-            <TemplateOrderedFields segments={back} variant="preview" />
+            <SavedCardTemplateBlocksView card={card} side="back" variant="preview" />
           </section>
         ) : null}
       </div>

@@ -1,17 +1,15 @@
-import { TemplateOrderedFields } from '@/components/cardDisplay/TemplateOrderedFields'
-import { getTemplateDisplaySegments } from '@/domain/templateFieldDisplay'
+import { SavedCardTemplateBlocksView, SAVED_CARD_READ_VARIANT } from '@/components/cardDisplay/SavedCardTemplateBlocksView'
 import type { SavedCard } from '@/types/cards'
 
 type ReviewAnswerDetailsProps = {
   card: SavedCard
-  variant?: 'quiz' | 'preview'
+  variant?: 'study' | 'quiz' | 'preview'
 }
 
-export function ReviewAnswerDetails({ card, variant = 'quiz' }: ReviewAnswerDetailsProps) {
-  const { back } = getTemplateDisplaySegments(card)
+export function ReviewAnswerDetails({ card, variant = SAVED_CARD_READ_VARIANT }: ReviewAnswerDetailsProps) {
   return (
     <div className="w-full">
-      <TemplateOrderedFields segments={back} variant={variant === 'preview' ? 'preview' : 'quiz'} />
+      <SavedCardTemplateBlocksView card={card} side="back" variant={variant} />
     </div>
   )
 }

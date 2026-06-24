@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CardFieldKey, ExampleSentenceDto, GeneratedCardData } from '@/types/cards'
 import { renderCardFieldContent } from '@/components/flashcard/renderCardFieldContent'
+import { cardInput, exampleSentence } from '@/domain/languageCardData'
+import {
+  formatPronunciationsForDisplay,
+  parsePronunciationsFromText,
+} from '@/domain/pronunciations'
 import { fieldLabel } from '@/utils/renderCardFace'
 
 function examplesToLines(data: GeneratedCardData): string {
-  return data.examples.map((e) => e.text).join('\n')
-}
-
-function translationsToLines(data: GeneratedCardData): string {
-  return data.examples.map((e) => e.translation ?? '').join('\n')
+  return data.examples.map((e) => exampleSentence(e)).join('\n')
 }
 
 function mergeExampleLines(
@@ -20,44 +21,26 @@ function mergeExampleLines(
   const examples: ExampleSentenceDto[] = []
   const n = Math.max(exParts.length, prev.length)
   for (let i = 0; i < n; i += 1) {
-    const text = exParts[i] ?? ''
+    const sentence = exParts[i] ?? ''
     const translation = prev[i]?.translation
-    if (!text && !translation) continue
-    if (text) examples.push({ text, translation })
+    if (!sentence && !translation) continue
+    if (sentence || translation) examples.push({ sentence, translation })
   }
   return { examples: examples.length ? examples : [] }
 }
 
-function mergeTranslationLines(
-  data: GeneratedCardData,
-  trLines: string,
-): Partial<GeneratedCardData> {
-  const trParts = trLines.split('\n').map((l) => l.trim())
-  const examples = data.examples.map((ex, i) => ({
-    ...ex,
-    translation: (trParts[i] ?? '').trim() || undefined,
-  }))
-  return { examples }
-}
-
 function draftStringForField(fieldType: CardFieldKey, data: GeneratedCardData): string {
   switch (fieldType) {
-    case 'word':
-      return data.word
-    case 'phonetic':
-      return data.phonetic ?? ''
+    case 'input':
+      return cardInput(data)
+    case 'translation':
+      return data.translation ?? ''
+    case 'pronunciations':
+      return data.pronunciations?.length ? formatPronunciationsForDisplay(data.pronunciations) : ''
     case 'partOfSpeech':
-      return data.partOfSpeech ?? ''
-    case 'targetMeaning':
-      return data.targetMeaning ?? ''
-    case 'englishMeaning':
-      return data.englishMeaning ?? ''
-    case 'notes':
-      return data.notes ?? ''
+      return data.partOfSpeech?.join(', ') ?? ''
     case 'examples':
       return examplesToLines(data)
-    case 'exampleTranslations':
-      return translationsToLines(data)
     default: {
       const _exhaustive: never = fieldType
       return _exhaustive
@@ -115,43 +98,30 @@ export function InlineEditableCardField({
 
   const commit = useCallback(() => {
     switch (fieldType) {
-      case 'word': {
-        const word = draft.trim() || data.word
-        if (word !== data.word) onCommit({ word })
+      case 'input': {
+        const input = draft.trim() || cardInput(data)
+        if (input !== cardInput(data)) onCommit({ input })
         break
       }
-      case 'phonetic': {
+      case 'translation': {
         const v = draft.trim() || undefined
-        if (v !== data.phonetic) onCommit({ phonetic: v })
+        if (v !== data.translation) onCommit({ translation: v })
+        break
+      }
+      case 'pronunciations': {
+        const parsed = parsePronunciationsFromText(draft)
+        onCommit({ pronunciations: parsed.length > 0 ? parsed : undefined })
         break
       }
       case 'partOfSpeech': {
-        const v = draft.trim() || undefined
-        if (v !== data.partOfSpeech) onCommit({ partOfSpeech: v })
-        break
-      }
-      case 'targetMeaning': {
-        const v = draft.trim() || undefined
-        if (v !== data.targetMeaning) onCommit({ targetMeaning: v })
-        break
-      }
-      case 'englishMeaning': {
-        const v = draft.trim() || undefined
-        if (v !== data.englishMeaning) onCommit({ englishMeaning: v })
-        break
-      }
-      case 'notes': {
-        const v = draft.trim() || undefined
-        if (v !== data.notes) onCommit({ notes: v })
+        const parts = draft.split(/\s*[,·]\s*/).map((p) => p.trim()).filter(Boolean)
+        const next = parts.length > 0 ? parts : undefined
+        const prev = data.partOfSpeech?.join(', ') ?? ''
+        if (draft.trim() !== prev) onCommit({ partOfSpeech: next })
         break
       }
       case 'examples': {
-        const next = mergeExampleLines(data, draft)
-        onCommit(next)
-        break
-      }
-      case 'exampleTranslations': {
-        onCommit(mergeTranslationLines(data, draft))
+        onCommit(mergeExampleLines(data, draft))
         break
       }
       default:
@@ -175,11 +145,7 @@ export function InlineEditableCardField({
       return
     }
 
-    const isMultiline =
-      fieldType === 'englishMeaning' ||
-      fieldType === 'notes' ||
-      fieldType === 'examples' ||
-      fieldType === 'exampleTranslations'
+    const isMultiline = fieldType === 'translation' || fieldType === 'examples' || fieldType === 'pronunciations'
 
     if (!isMultiline && e.key === 'Enter') {
       e.preventDefault()
@@ -246,15 +212,12 @@ export function InlineEditableCardField({
   }
 
   const isMultiline =
-    fieldType === 'englishMeaning' ||
-    fieldType === 'notes' ||
-    fieldType === 'examples' ||
-    fieldType === 'exampleTranslations'
+    fieldType === 'translation' || fieldType === 'examples' || fieldType === 'pronunciations'
 
-  const wordClass =
-    fieldType === 'word'
+  const inputClass =
+    fieldType === 'input'
       ? 'font-display text-2xl font-semibold tracking-tight sm:text-3xl'
-      : fieldType === 'phonetic'
+      : fieldType === 'pronunciations'
         ? 'font-mono text-sm text-violet-700 dark:text-violet-300'
         : ''
 
@@ -270,21 +233,19 @@ export function InlineEditableCardField({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
           onBlur={onBlur}
-          rows={fieldType === 'examples' || fieldType === 'exampleTranslations' ? 5 : 3}
-          className={`${ghostTextarea} ${wordClass}`}
+          rows={fieldType === 'examples' ? 5 : 3}
+          className={`${ghostTextarea} ${inputClass}`}
           aria-label={label}
           placeholder={
             fieldType === 'examples'
               ? 'One example sentence per line'
-              : fieldType === 'exampleTranslations'
-                ? 'One translation per line (aligned with examples)'
+              : fieldType === 'pronunciations'
+                ? 'One pronunciation per line (optional accent prefix)'
                 : undefined
           }
         />
         <p className="text-[10px] text-slate-400 dark:text-slate-500">
-          {fieldType === 'englishMeaning' || fieldType === 'notes'
-            ? 'Ctrl+Enter to save · Esc cancels'
-            : 'Ctrl+Enter to save · Esc cancels · Enter for newline'}
+          Ctrl+Enter to save · Esc cancels · Enter for newline
         </p>
       </div>
     )
@@ -301,7 +262,7 @@ export function InlineEditableCardField({
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={onKeyDown}
         onBlur={onBlur}
-        className={`${ghostInput} ${wordClass}`}
+        className={`${ghostInput} ${inputClass}`}
         aria-label={label}
       />
     </div>

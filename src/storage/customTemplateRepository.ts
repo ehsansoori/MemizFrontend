@@ -32,17 +32,16 @@ function saveAll(templates: StoredCustomTemplate[]): void {
 
 function expandedKeyToLegacy(key: string): CardFieldKey {
   const k = key.toLowerCase()
-  if (k === 'front' || k === 'word' || k === 'term' || k === 'question') return 'word'
-  if (k === 'back' || k === 'targetmeaning' || k === 'meaning' || k === 'definition' || k === 'answer') {
-    return 'targetMeaning'
+  if (k === 'front' || k === 'word' || k === 'term' || k === 'question' || k === 'input') {
+    return 'input'
   }
-  if (k === 'englishmeaning') return 'englishMeaning'
-  if (k.includes('phonetic')) return 'phonetic'
-  if (k.includes('speech') || k === 'pos') return 'partOfSpeech'
-  if (k.includes('example') && k.includes('trans')) return 'exampleTranslations'
+  if (k === 'back' || k === 'targetmeaning' || k === 'meaning' || k === 'definition' || k === 'answer' || k === 'translation') {
+    return 'translation'
+  }
+  if (k.includes('phonetic') || k.includes('pronunciation')) return 'pronunciations'
+  if (k.includes('speech') || k === 'pos' || k === 'partofspeech') return 'partOfSpeech'
   if (k.includes('example')) return 'examples'
-  if (k.includes('note') || k.includes('explanation')) return 'notes'
-  return 'notes'
+  return 'translation'
 }
 
 function toCardTemplate(stored: StoredCustomTemplate): CardTemplate {

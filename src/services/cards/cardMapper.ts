@@ -1,6 +1,7 @@
 import type { CardFieldLayout, GeneratedCard, GeneratedCardData, GenerationMetadata } from '@/types/cards'
 import type { GenerateCardsFormDto } from '@/types/cards'
 import type { ApiCardResponseDto } from '@/services/api/types/cardsApi.types'
+import { zipPronunciationsWithSources } from '@/domain/pronunciations'
 import { cloneLayoutForCard } from '@/utils/cardLayoutModel'
 
 function newId(): string {
@@ -18,6 +19,7 @@ function metadataFromForm(form: GenerateCardsFormDto): GenerationMetadata {
     targetLanguage: form.targetLanguage,
     tone: o.tone,
     difficulty: o.difficulty,
+    pronunciations: o.pronunciations,
     exampleCount: o.exampleCount,
     includePhonetic: o.includePhonetic,
     includePartOfSpeech: o.includePartOfSpeech,
@@ -37,31 +39,34 @@ export function apiCardToGeneratedCardData(
 ): GeneratedCardData {
   const { back } = row
   const opts = form.options
-  const word = back.word?.trim() || row.front.trim()
+  const input = back.input?.trim() || row.front.trim()
 
   const examples = (back.examples ?? []).map((ex) => ({
-    text: ex.sentence,
+    sentence: ex.sentence,
     translation: opts.includeExampleTranslations ? ex.translation : undefined,
   }))
 
   const data: GeneratedCardData = {
-    word,
+    input,
     examples,
   }
 
-  if (opts.includePhonetic && back.phonetic) data.phonetic = back.phonetic
-  if (opts.includePartOfSpeech && back.partOfSpeech) data.partOfSpeech = back.partOfSpeech
-  if (opts.includeTargetMeaning && back.targetMeaning) {
-    data.targetMeaning = back.targetMeaning
-  } else if (opts.includeTargetMeaning && back.meaning) {
-    data.targetMeaning = back.meaning
+  if (opts.includePhonetic && back.pronunciations?.length) {
+    const pronunciations = zipPronunciationsWithSources(opts.pronunciations, back.pronunciations)
+    if (pronunciations.length > 0) data.pronunciations = pronunciations
   }
-  if (opts.includeEnglishMeaning && back.englishMeaning) {
-    data.englishMeaning = back.englishMeaning
+
+  if (opts.includePartOfSpeech && back.partOfSpeech?.length) {
+    const parts = back.partOfSpeech.filter(Boolean)
+    if (parts.length > 0) data.partOfSpeech = parts
+  }
+
+  if (opts.includeTargetMeaning && back.translation) {
+    data.translation = back.translation
   }
 
   if (!opts.includeExampleTranslations && data.examples.length) {
-    data.examples = data.examples.map(({ text }) => ({ text }))
+    data.examples = data.examples.map(({ sentence }) => ({ sentence }))
   }
 
   return data
@@ -80,7 +85,7 @@ export function mapApiCardsToGeneratedCards(
   return rows.map((row, index) => {
     const sourceInput = preserve?.[index]?.sourceInput ?? row.front.trim()
     if (isInvalidApiCardResponse(row)) {
-      const originalWord = row.back.word?.trim() || sourceInput
+      const originalWord = row.back.input?.trim() || sourceInput
       return {
         id: preserve?.[index]?.id ?? newId(),
         sourceInput: originalWord,
@@ -88,7 +93,7 @@ export function mapApiCardsToGeneratedCards(
         frontLayout: cloneLayoutForCard(layout.frontLayout),
         backLayout: cloneLayoutForCard(layout.backLayout),
         data: {
-          word: originalWord,
+          input: originalWord,
           examples: [],
         },
         invalid: {
@@ -120,7 +125,6 @@ export function mapApiCardsToGeneratedCards(
   })
 }
 
-/** Merge regenerated examples into existing card data. */
 export function mergeExamplesFromApi(
   current: GeneratedCardData,
   row: ApiCardResponseDto,

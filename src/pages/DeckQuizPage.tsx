@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, Navigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { StudyCardActionsSheet } from '@/components/deckStudy/StudyCardActionsSheet'
 import { DeckQuizHeader } from '@/components/deckQuiz/DeckQuizHeader'
 import { ReviewFlashcard } from '@/components/review/ReviewFlashcard'
 import { ReviewRatingButtons, type ReviewRating } from '@/components/review/ReviewRatingButtons'
 import { applyReviewRating } from '@/domain/applyReviewRating'
+import { buildEditCardPath } from '@/domain/editCardNavigation'
+import { cardInput } from '@/domain/languageCardData'
+import { savedCardWord } from '@/domain/templateFieldDisplay'
 import { useToast } from '@/providers/toastContext'
 import { storage } from '@/storage/adapter'
 import { useLibraryStore } from '@/store/library/libraryStore'
@@ -24,6 +28,10 @@ function isTypingTarget(t: EventTarget | null): boolean {
 
 export function DeckQuizPage() {
   const { deckId } = useParams<{ deckId: string }>()
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const cardIdParam = searchParams.get('card')
+  const atIndexParam = searchParams.get('atIndex')
   const { showToast } = useToast()
 
   const decks = useLibraryStore((s) => s.decks)
@@ -35,7 +43,11 @@ export function DeckQuizPage() {
   const [showAnswer, setShowAnswer] = useState(false)
   const [sessionComplete, setSessionComplete] = useState(false)
   const [ratingBusy, setRatingBusy] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
   const lastViewedCardIdRef = useRef<string | null>(null)
+
+  const busy = ratingBusy || deleteBusy
 
   const deck = useMemo(
     () => (deckId ? decks.find((d) => d.id === deckId) : undefined),
@@ -46,7 +58,7 @@ export function DeckQuizPage() {
     if (!deckId) return []
     return allCards
       .filter((c) => c.deckId === deckId)
-      .sort((a, b) => a.data.word.localeCompare(b.data.word, undefined, { sensitivity: 'base' }))
+      .sort((a, b) => cardInput(a.data).localeCompare(cardInput(b.data), undefined, { sensitivity: 'base' }))
   }, [allCards, deckId])
 
   const total = deckCards.length
@@ -55,6 +67,10 @@ export function DeckQuizPage() {
   useEffect(() => {
     lastViewedCardIdRef.current = deckCards[currentIndex]?.id ?? null
   }, [deckCards, currentIndex])
+
+  useEffect(() => {
+    setActionsOpen(false)
+  }, [currentCard?.id])
 
   useEffect(() => {
     setCurrentIndex(0)
@@ -67,6 +83,25 @@ export function DeckQuizPage() {
       setCurrentIndex(0)
       return
     }
+    if (atIndexParam !== null) {
+      const targetIndex = Number.parseInt(atIndexParam, 10)
+      if (Number.isFinite(targetIndex)) {
+        const idx = Math.max(0, Math.min(targetIndex, deckCards.length - 1))
+        setCurrentIndex(idx)
+        setShowAnswer(false)
+        setSessionComplete(false)
+        return
+      }
+    }
+    if (cardIdParam) {
+      const idx = deckCards.findIndex((c) => c.id === cardIdParam)
+      if (idx >= 0) {
+        setCurrentIndex(idx)
+        setShowAnswer(false)
+        setSessionComplete(false)
+        return
+      }
+    }
     const lastId = lastViewedCardIdRef.current
     if (lastId) {
       const idx = deckCards.findIndex((c) => c.id === lastId)
@@ -76,7 +111,7 @@ export function DeckQuizPage() {
       }
     }
     setCurrentIndex(0)
-  }, [deckCards])
+  }, [deckCards, cardIdParam, atIndexParam])
 
   const advance = useCallback(() => {
     setShowAnswer(false)
@@ -115,9 +150,42 @@ export function DeckQuizPage() {
     setSessionComplete(false)
   }
 
+  const handleDeleteCard = async () => {
+    if (!currentCard || !deckId) return
+    if (!window.confirm(`Delete “${savedCardWord(currentCard)}”?`)) return
+    setDeleteBusy(true)
+    try {
+      const remaining = deckCards.filter((c) => c.id !== currentCard.id)
+      await storage.cards.softDelete(currentCard.id)
+      await reload()
+      setActionsOpen(false)
+      showToast('Card deleted.', 'success')
+      if (remaining.length === 0) {
+        navigate(`/decks/${deckId}`)
+        return
+      }
+      const nextIdx = Math.min(currentIndex, remaining.length - 1)
+      setCurrentIndex(nextIdx)
+      setShowAnswer(false)
+      setSessionComplete(false)
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not delete card.', 'error')
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target) || sessionComplete || total === 0 || ratingBusy) return
+      if (
+        isTypingTarget(e.target) ||
+        sessionComplete ||
+        total === 0 ||
+        busy ||
+        actionsOpen
+      ) {
+        return
+      }
 
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault()
@@ -145,7 +213,7 @@ export function DeckQuizPage() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [showAnswer, sessionComplete, total, ratingBusy, handleRate])
+  }, [showAnswer, sessionComplete, total, busy, actionsOpen, handleRate])
 
   if (hydrated && !deck) {
     return <Navigate to="/decks" replace />
@@ -225,10 +293,12 @@ export function DeckQuizPage() {
             key={currentCard.id}
             card={currentCard}
             showAnswer={showAnswer}
+            menuDisabled={busy}
+            onMenu={() => setActionsOpen(true)}
             footer={
               showAnswer ? (
                 <>
-                  <ReviewRatingButtons onRate={(r) => void handleRate(r)} disabled={ratingBusy} />
+                  <ReviewRatingButtons onRate={(r) => void handleRate(r)} disabled={busy} />
                   <p className="mt-2 text-center text-[11px] text-slate-400 dark:text-slate-500">
                     1 Again · 2 Hard · 3 Good · 4 Easy
                   </p>
@@ -241,11 +311,34 @@ export function DeckQuizPage() {
             <button
               type="button"
               onClick={() => setShowAnswer(true)}
-              className="review-show-answer-animate mt-6 flex h-14 w-full items-center justify-center rounded-2xl bg-accent text-[16px] font-bold text-white shadow-lg shadow-accent/25 transition active:scale-[0.98]"
+              disabled={busy}
+              className="review-show-answer-animate mt-6 flex h-14 w-full items-center justify-center rounded-2xl bg-accent text-[16px] font-bold text-white shadow-lg shadow-accent/25 transition active:scale-[0.98] disabled:opacity-40"
             >
               Show Answer
             </button>
           ) : null}
+
+          <StudyCardActionsSheet
+            open={actionsOpen}
+            cardLabel={savedCardWord(currentCard)}
+            busy={busy}
+            onClose={() => setActionsOpen(false)}
+            onEdit={() => {
+              setActionsOpen(false)
+              navigate(
+                buildEditCardPath(deckId, currentCard.id, {
+                  sourcePage: 'quiz',
+                  sourceDeckId: deckId,
+                  sourceSessionState: {
+                    cardId: currentCard.id,
+                    cardIndex: currentIndex,
+                    showAnswer,
+                  },
+                }),
+              )
+            }}
+            onDelete={() => void handleDeleteCard()}
+          />
         </div>
       ) : null}
 
